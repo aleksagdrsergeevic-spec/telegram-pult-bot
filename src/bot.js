@@ -259,8 +259,8 @@ function buildFinalText({ res, sessionName, elapsed }) {
   }
   if (res.idle) {
     return [
-      `⏸ Задача остановлена: ${formatDuration(cfg.idleTimeoutMs)} без единой строки вывода.`,
-      'Похоже, OpenCode встал на входе в аккаунт или потерял связь с моделью.',
+      `⏸ Модель не ответила за ${formatDuration(cfg.idleTimeoutMs)} — задача остановлена.`,
+      'Обычно это перегрузка провайдера или не выполнен вход (pult-opencode auth login).',
       '',
       body,
     ]
@@ -341,7 +341,7 @@ async function runTask(chatId, prompt) {
 
   let placeholder = null;
   try {
-    placeholder = await tg.sendMessage(chatId, `⏳ работаю: ${session.name}…`, {
+    placeholder = await tg.sendMessage(chatId, `⏳ думаю: ${session.name}…`, {
       disable_notification: true,
     });
   } catch (err) {
@@ -371,7 +371,7 @@ async function runTask(chatId, prompt) {
         .editText(
           chatId,
           placeholderId,
-          `⏳ работаю: ${session.name} · ${formatDuration(Date.now() - started)}`,
+          `⏳ думаю: ${session.name} · ${formatDuration(Date.now() - started)}`,
         )
         .catch(() => {});
     }, 60000);
@@ -396,7 +396,14 @@ async function runTask(chatId, prompt) {
       idleTimeoutMs: cfg.idleTimeoutMs,
       onChunk,
     });
-    activeTasks.set(key, { name: session.name, startedAt: started, lastOutputAt: Date.now(), kill: handle.kill, prompt });
+    activeTasks.set(key, {
+      name: session.name,
+      startedAt: started,
+      lastOutputAt: Date.now(),
+      kill: handle.kill,
+      isAlive: handle.isAlive,
+      prompt,
+    });
     return handle.promise;
   };
 

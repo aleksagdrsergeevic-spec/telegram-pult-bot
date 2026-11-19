@@ -190,7 +190,12 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
       })),
       running: !!task,
       task: task
-        ? { name: task.name, startedAt: task.startedAt, lastOutputAt: task.lastOutputAt || task.startedAt }
+        ? {
+            name: task.name,
+            startedAt: task.startedAt,
+            lastOutputAt: task.lastOutputAt || task.startedAt,
+            alive: typeof task.isAlive === 'function' ? task.isAlive() : true,
+          }
         : null,
       queued: (queues.get(String(userId)) || []).length,
     };
@@ -223,7 +228,6 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
     if (history) history.append(session.name, 'user', text);
 
     let idleTimer = null;
-    let idleNoticeSent = 0;
 
     const startRun = (runModel) =>
       withWorkspaceLock(session.name, async () => {
@@ -246,21 +250,9 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
           startedAt: started,
           lastOutputAt: Date.now(),
           kill: handle.kill,
+          isAlive: handle.isAlive,
           prompt: text,
         });
-
-        idleTimer = setInterval(() => {
-          const quiet = Math.round((Date.now() - handle.lastOutputAt) / 1000);
-          if (quiet >= 60 && quiet - idleNoticeSent >= 45) {
-            idleNoticeSent = quiet;
-            broadcast(userId, {
-              type: 'idle',
-              seconds: quiet,
-              limit: Math.round(cfg.idleTimeoutMs / 1000),
-            });
-          }
-        }, 15000);
-        if (typeof idleTimer.unref === 'function') idleTimer.unref();
 
         return handle.promise;
       });

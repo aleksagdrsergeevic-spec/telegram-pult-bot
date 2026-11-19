@@ -350,6 +350,15 @@ export class OpenCode {
       pid: child.pid,
       kill,
       promise,
+      isAlive: () => {
+        if (settled) return false;
+        try {
+          process.kill(child.pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      },
       get lastOutputAt() {
         return lastOutputAt;
       },

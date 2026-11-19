@@ -431,12 +431,17 @@
         }
         const elapsed = Math.round((now() - state.task.startedAt) / 1000);
         const quiet = Math.round((now() - (state.task.lastOutputAt || state.task.startedAt)) / 1000);
-        el.dot.classList.add('on');
-        el.status.textContent =
-          (quiet >= 30 ? 'молчит ' + dur(quiet) : 'работает') +
-          ' · ' +
-          dur(elapsed) +
-          (queued ? ' · в очереди: ' + queued : '');
+        const alive = state.task.alive !== false;
+        el.dot.classList.toggle('on', alive);
+        if (!alive) {
+          el.status.textContent = 'процесс пропал';
+          el.status.classList.remove('busy');
+          return;
+        }
+        let text = quiet >= 30 ? 'думает ' + dur(quiet) : 'работает';
+        text += ' · ' + dur(elapsed);
+        if (queued) text += ' · в очереди: ' + queued;
+        el.status.textContent = text;
         el.status.classList.add('busy');
       }
       setInterval(tick, 1000);
@@ -746,18 +751,6 @@
         es.addEventListener('notice', (e) => {
           try {
             note(JSON.parse(e.data).message);
-          } catch {
-            /* ignore */
-          }
-        });
-
-        es.addEventListener('idle', (e) => {
-          try {
-            const data = JSON.parse(e.data);
-            note(
-              '⏳ модель молчит ' + dur(data.seconds) + ' — задача выполняется' +
-                (data.limit ? ', предел ' + dur(data.limit) : ''),
-            );
           } catch {
             /* ignore */
           }
