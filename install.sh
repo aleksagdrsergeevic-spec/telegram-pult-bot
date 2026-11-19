@@ -214,7 +214,7 @@ copy_sources() {
         --exclude './.env' --exclude './.env.deploy' \
         --exclude './logs' --exclude './data' . ) | tar -xzf - -C "$APP_DIR"
   fi
-  chmod +x "$APP_DIR/install.sh" "$APP_DIR/deploy.sh" 2>/dev/null || true
+  chmod +x "$APP_DIR/install.sh" "$APP_DIR/deploy.sh" "$APP_DIR/scripts/https-ip.sh" 2>/dev/null || true
 }
 
 set_env_value() {
@@ -441,7 +441,7 @@ install_opencode_config
 copy_sources
 setup_env
 chown -R "$PULT_USER:$PULT_USER" "$APP_DIR"
-chmod +x "$APP_DIR/install.sh" "$APP_DIR/deploy.sh" 2>/dev/null || true
+chmod +x "$APP_DIR/install.sh" "$APP_DIR/deploy.sh" "$APP_DIR/scripts/https-ip.sh" 2>/dev/null || true
 
 verify_bot
 check_opencode
