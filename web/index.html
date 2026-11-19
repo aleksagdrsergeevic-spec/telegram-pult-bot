@@ -281,7 +281,7 @@
     <footer>
       <textarea id="input" rows="1" placeholder="Задача для OpenCode…"></textarea>
       <button class="send" id="sendBtn" title="Отправить">➤</button>
-      <button class="stop" id="stopBtn" title="Остановить" hidden>■</button>
+      <button class="stop" id="stopBtn" title="Остановить задачу и очистить очередь" hidden>■</button>
     </footer>
 
     <div class="sheet" id="sessionSheet" hidden>
@@ -394,8 +394,10 @@
 
       function setBusy(value) {
         busy = value;
-        el.send.hidden = value;
+        // Кнопка отправки видна всегда: во время работы она добавляет в очередь.
+        el.send.hidden = false;
         el.stop.hidden = !value;
+        el.send.title = value ? 'Добавить в очередь' : 'Отправить';
         if (!value) {
           el.status.textContent = '';
           el.status.classList.remove('busy');
