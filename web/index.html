@@ -147,6 +147,40 @@
       .bot code, .bot pre { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
       .note { align-self: center; color: var(--hint); font-size: 12px; text-align: center; }
       .err { align-self: center; color: #f87171; font-size: 13px; text-align: center; }
+      .bar {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-top: 1px solid var(--line);
+        background: rgba(12, 9, 22, 0.86);
+        font-size: 12px;
+        color: var(--hint);
+      }
+      .bar-model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .bar-tokens {
+        margin-left: auto;
+        background: rgba(139, 92, 246, 0.16);
+        border: 1px solid var(--line);
+        color: var(--text);
+        border-radius: 999px;
+        padding: 3px 10px;
+        font-size: 12px;
+      }
+      .msg.status { opacity: 0.65; font-style: italic; }
+      .answer-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .answer-toggle {
+        background: none;
+        border: 1px solid var(--line);
+        color: var(--text);
+        border-radius: 999px;
+        font-size: 11px;
+        padding: 2px 8px;
+      }
+      .answer-body { margin-top: 8px; }
+      .token-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 13px; }
+      .token-row span:last-child { color: var(--hint); }
       .hero {
         display: flex;
         flex-direction: column;
@@ -296,11 +330,24 @@
       </div>
     </main>
 
+    <div class="bar" id="bar">
+      <span class="bar-model" id="barModel">—</span>
+      <button class="bar-tokens" id="barTokens">токены: —</button>
+    </div>
+
     <footer>
       <textarea id="input" rows="1" placeholder="Задача для OpenCode…"></textarea>
       <button class="send" id="sendBtn" title="Отправить">➤</button>
       <button class="stop" id="stopBtn" title="Остановить задачу и очистить очередь" hidden>■</button>
     </footer>
+
+    <div class="sheet" id="tokenSheet" hidden>
+      <div class="sheet-body">
+        <button class="close" data-close="tokenSheet">закрыть</button>
+        <h3>Токены</h3>
+        <div id="tokenInfo"></div>
+      </div>
+    </div>
 
     <div class="sheet" id="sessionSheet" hidden>
       <div class="sheet-body">
@@ -347,6 +394,11 @@
         modelsList: document.getElementById('modelsList'),
         newName: document.getElementById('newName'),
         createBtn: document.getElementById('createBtn'),
+        bar: document.getElementById('bar'),
+        barModel: document.getElementById('barModel'),
+        barTokens: document.getElementById('barTokens'),
+        tokenSheet: document.getElementById('tokenSheet'),
+        tokenInfo: document.getElementById('tokenInfo'),
       };
 
       let token = null;
@@ -442,6 +494,50 @@
         return s + ' с';
       }
 
+      function fmt(n) {
+        const value = Math.max(0, Math.round(Number(n) || 0));
+        if (value < 1000) return String(value);
+        if (value < 1000000) return (value / 1000).toFixed(1).replace('.0', '') + 'k';
+        return (value / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'M';
+      }
+
+      function answerBubble(text, summary) {
+        const div = document.createElement('div');
+        div.className = 'msg bot';
+        const head = document.createElement('div');
+        head.className = 'answer-head';
+        head.textContent = summary;
+
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'answer-toggle';
+        toggle.textContent = 'показать';
+        head.appendChild(toggle);
+
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'answer-toggle';
+        copy.textContent = '⧉';
+        copy.title = 'Скопировать ответ';
+        copy.onclick = () => void copyText(text);
+        head.appendChild(copy);
+
+        const body = document.createElement('div');
+        body.className = 'text answer-body';
+        body.textContent = text;
+        body.hidden = true;
+
+        toggle.onclick = () => {
+          body.hidden = !body.hidden;
+          toggle.textContent = body.hidden ? 'показать' : 'скрыть';
+        };
+
+        div.append(head, body);
+        el.log.appendChild(div);
+        scrollDown();
+        return div;
+      }
+
       function setBusy(value) {
         busy = value;
         // Кнопка отправки видна всегда: во время работы она добавляет в очередь.
@@ -459,7 +555,11 @@
         state = next;
         skew = next.now ? Date.now() - next.now : 0;
         el.sessionName.textContent = next.current ? next.current.name : 'нет сессии';
-        el.modelName.textContent = (next.current && next.current.model) || next.model || '—';
+        const model = (next.current && next.current.model) || next.model || '—';
+        el.modelName.textContent = model;
+        const tokens = next.tokens || { prompt: 0, output: 0, total: 0 };
+        el.barModel.textContent = model;
+        el.barTokens.textContent = '≈' + fmt(tokens.total) + ' токенов';
         setBusy(!!next.running);
         renderSessions();
       }
@@ -531,7 +631,8 @@
         const messages = data.messages || [];
         showHero(messages.length === 0);
         for (const item of messages) {
-          bubble(item.text, item.role === 'user' ? 'me' : 'bot');
+          if (item.role === 'user') bubble(item.text, 'me');
+          else answerBubble(item.text, 'ответ');
         }
         scrollDown();
       }
@@ -562,33 +663,33 @@
         es = new EventSource('/api/stream?t=' + encodeURIComponent(token));
 
         es.addEventListener('start', (e) => {
-          const data = JSON.parse(e.data);
-          current = bubble('', 'bot');
-          current.classList.add('cursor');
+          JSON.parse(e.data);
+          current = bubble('выполняю задачу…', 'bot');
+          current.classList.add('status');
           showHero(false);
-          note('▶ ' + data.session + ' · ' + data.model);
           if (!state) state = {};
           state.task = { startedAt: now(), lastOutputAt: now() };
           if (state.queued) state.queued = Math.max(0, state.queued - 1);
           setBusy(true);
         });
-        es.addEventListener('chunk', (e) => {
-          const data = JSON.parse(e.data);
-          if (!current) current = bubble('', 'bot');
-          const textEl = current.querySelector('.text');
-          if (textEl) textEl.textContent += data.text;
+
+        es.addEventListener('chunk', () => {
           if (state && state.task) state.task.lastOutputAt = now();
-          scrollDown();
         });
 
         es.addEventListener('done', (e) => {
           const data = JSON.parse(e.data);
-          if (current) current.classList.remove('cursor');
+          const el0 = current;
+          current = null;
+          if (el0) el0.remove();
+
+          const tokens = data.tokens ? fmt((data.tokens.prompt || 0) + (data.tokens.output || 0)) : '';
           if (data.stopped) note('⏹ остановлено · ' + data.elapsed);
           else if (data.timedOut) note('⏰ таймаут · ' + data.elapsed);
-          else if (!data.ok) note('❌ код ' + data.code + (data.error ? ': ' + data.error : ''), 'err');
+          else if (!data.ok) note('❌ ' + (data.error || 'ошибка') + ' · ' + data.elapsed, 'err');
+          else if (data.text) answerBubble(data.text, '✅ готово · ' + data.elapsed + (tokens ? ' · ≈' + tokens : ''));
           else note('✅ готово · ' + data.elapsed);
-          current = null;
+
           if (state) state.task = null;
           setBusy(false);
           refresh();
@@ -683,6 +784,39 @@
           send();
         }
       });
+
+      el.barTokens.onclick = () => {
+        const nowState = state || {};
+        const tokens = nowState.tokens || { prompt: 0, output: 0, total: 0 };
+        const limit = nowState.tokenLimit || 200000;
+        const total = tokens.total || 0;
+        const percent = Math.min(100, Math.round((total / limit) * 1000) / 10);
+        const model = nowState.current ? nowState.current.model : nowState.model || '—';
+
+        el.tokenInfo.textContent = '';
+        const rows = [
+          ['модель', model],
+          ['за сессию (оценка)', '≈' + fmt(total)],
+          ['запросы', '≈' + fmt(tokens.prompt)],
+          ['ответы', '≈' + fmt(tokens.output)],
+          ['лимит контекста модели', fmt(limit)],
+          ['доля лимита', percent + '%'],
+        ];
+        for (const [label, value] of rows) {
+          const row = document.createElement('div');
+          row.className = 'token-row';
+          const left = document.createElement('span');
+          left.textContent = label;
+          const right = document.createElement('span');
+          right.textContent = value;
+          row.append(left, right);
+          el.tokenInfo.appendChild(row);
+        }
+        const hint = document.createElement('small');
+        hint.textContent = 'Токены считаются оценкой по длине текста (4 символа ≈ 1 токен), накопительно по этой папке.';
+        el.tokenInfo.appendChild(hint);
+        el.tokenSheet.hidden = false;
+      };
 
       el.sessionBtn.onclick = () => {
         el.sessionSheet.hidden = false;

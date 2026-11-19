@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { stripAnsi, isModelAccessDisabled } from './opencode.js';
+import { contextLimit, estimateTokens } from './models.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const INDEX_PATH = path.join(HERE, '..', 'web', 'index.html');
@@ -170,6 +171,15 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
       current: current
         ? { name: current.name, path: current.path, model: current.model || cfg.model, missing: !!current.missing }
         : null,
+      tokens: current
+        ? {
+            prompt: (current.tokens && current.tokens.prompt) || 0,
+            output: (current.tokens && current.tokens.output) || 0,
+            total:
+              ((current.tokens && current.tokens.prompt) || 0) + ((current.tokens && current.tokens.output) || 0),
+          }
+        : { prompt: 0, output: 0, total: 0 },
+      tokenLimit: contextLimit((current && current.model) || cfg.model),
       sessions: store.list().map((item) => ({
         name: item.name,
         path: item.path,
@@ -273,13 +283,24 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
 
       if (res.sessionId) store.setOpenCodeSession(session.name, res.sessionId);
       if (!res.missing) store.markRun(session.name);
+
+      const outText = stripAnsi(res.output || '').trim();
+      const promptTokens = estimateTokens(text);
+      const outputTokens = estimateTokens(outText);
+      store.addTokens(session.name, promptTokens, outputTokens);
+
       if (history) {
-        const text = stripAnsi(res.output || '').trim();
-        history.append(session.name, 'assistant', text || (res.missing ? 'OpenCode не найден на сервере' : '(пустой вывод)'));
+        history.append(
+          session.name,
+          'assistant',
+          outText || (res.missing ? 'OpenCode не найден на сервере' : '(пустой вывод)'),
+        );
       }
 
       broadcast(userId, {
         type: 'done',
+        text: outText,
+        tokens: { prompt: promptTokens, output: outputTokens },
         elapsed: formatDuration(Date.now() - started),
         ok: res.code === 0 && !res.timedOut && !res.stopped,
         stopped: !!res.stopped,

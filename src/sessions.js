@@ -77,6 +77,10 @@ export class SessionStore {
             openCodeSessionId: item.openCodeSessionId || null,
             hasRun: item.hasRun === true,
             model: typeof item.model === 'string' && item.model ? item.model : null,
+            tokens: {
+              prompt: Number(item.tokens && item.tokens.prompt) || 0,
+              output: Number(item.tokens && item.tokens.output) || 0,
+            },
             source: item.source || 'local',
             createdAt: item.createdAt || new Date().toISOString(),
             lastUsedAt: item.lastUsedAt || new Date().toISOString(),
@@ -186,6 +190,8 @@ export class SessionStore {
       path: dir,
       openCodeSessionId: null,
       hasRun: false,
+      model: null,
+      tokens: { prompt: 0, output: 0 },
       source: url || 'local',
       createdAt: now,
       lastUsedAt: now,
@@ -278,6 +284,15 @@ export class SessionStore {
     return item;
   }
 
+  addTokens(name, prompt = 0, output = 0) {
+    const item = this.get(name);
+    if (!item) return;
+    if (!item.tokens) item.tokens = { prompt: 0, output: 0 };
+    item.tokens.prompt += Math.max(0, Math.round(prompt) || 0);
+    item.tokens.output += Math.max(0, Math.round(output) || 0);
+    this.save();
+  }
+
   markRun(name) {
     const item = this.get(name);
     if (!item) return;
@@ -296,6 +311,8 @@ export class SessionStore {
       path: dir,
       openCodeSessionId: null,
       hasRun: false,
+      model: null,
+      tokens: { prompt: 0, output: 0 },
       source: 'local',
       createdAt: now,
       lastUsedAt: now,

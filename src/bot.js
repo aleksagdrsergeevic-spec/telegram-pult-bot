@@ -9,6 +9,7 @@ import { createLogger } from './logger.js';
 import { Telegram, TelegramError } from './telegram.js';
 import { SessionStore } from './sessions.js';
 import { OpenCode, stripAnsi, isModelAccessDisabled } from './opencode.js';
+import { estimateTokens } from './models.js';
 import { startWebServer } from './web.js';
 import { HistoryStore } from './history.js';
 
@@ -486,6 +487,7 @@ async function runTask(chatId, prompt) {
   );
   if (res.stderr && res.code !== 0) log.warn(`stderr opencode: ${stripAnsi(res.stderr).slice(-500)}`);
   const text = modelNote + buildFinalText({ res: finalRes, sessionName: session.name, elapsed });
+  store.addTokens(session.name, estimateTokens(prompt), estimateTokens(finalRes.output || ''));
   history.append(session.name, 'assistant', stripAnsi(finalRes.output || text || '').trim() || text);
   await deliverFinal(chatId, placeholderId, text).catch((err) => {
     log.error('не смог отправить итог', err);
