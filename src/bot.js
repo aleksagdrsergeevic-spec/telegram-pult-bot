@@ -10,6 +10,7 @@ import { Telegram, TelegramError } from './telegram.js';
 import { SessionStore } from './sessions.js';
 import { OpenCode, stripAnsi } from './opencode.js';
 import { startWebServer } from './web.js';
+import { HistoryStore } from './history.js';
 
 const MAX_MESSAGE = 4000;
 const MAX_QUEUE = 5;
@@ -18,6 +19,7 @@ let cfg;
 let log;
 let tg;
 let store;
+let history;
 let oc;
 let botUsername = null;
 let stopping = false;
@@ -316,6 +318,7 @@ async function runTask(chatId, prompt) {
 
   const started = Date.now();
   const typing = startTyping(chatId);
+  history.append(session.name, 'user', prompt);
 
   let placeholder = null;
   try {
@@ -421,6 +424,7 @@ async function runTask(chatId, prompt) {
   const elapsed = formatDuration(Date.now() - started);
   const finalRes = cfg.streaming ? res : { ...res, output: cleanAgentOutput(res.output || '') };
   const text = buildFinalText({ res: finalRes, sessionName: session.name, elapsed });
+  history.append(session.name, 'assistant', stripAnsi(finalRes.output || text || '').trim() || text);
   await deliverFinal(chatId, placeholderId, text).catch((err) => {
     log.error('не смог отправить итог', err);
   });
@@ -898,6 +902,12 @@ async function main() {
     cloneTimeoutMs: cfg.cloneTimeoutMs,
   }).load();
 
+  history = new HistoryStore({
+    file: cfg.historyFile,
+    maxEntries: cfg.historyLimit,
+    logger: log,
+  }).load();
+
   oc = new OpenCode({ bin: cfg.opencodeBin, model: cfg.model, logger: log });
   await oc.probe();
   ensureOpenCodePermissions();
@@ -927,6 +937,7 @@ async function main() {
         activeTasks,
         withWorkspaceLock,
         botUsername,
+        history,
       });
     } catch (err) {
       log.error(`MiniApp не запустился: ${err.message}`);

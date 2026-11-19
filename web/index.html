@@ -282,6 +282,7 @@
             if (next) {
               renderState(next);
               closeSheets();
+              void loadHistory();
             }
           };
           el.sessionsList.appendChild(btn);
@@ -307,6 +308,23 @@
         return data;
       }
 
+      async function loadHistory() {
+        el.log.textContent = '';
+        const name = state && state.current ? state.current.name : '';
+        if (!name) {
+          note('Нет сессии — откройте список папок и создайте её.');
+          return;
+        }
+        const data = await api('/api/history?session=' + encodeURIComponent(name));
+        if (!data) return;
+        const messages = data.messages || [];
+        for (const item of messages) {
+          bubble(item.text, item.role === 'user' ? 'me' : 'bot');
+        }
+        if (!messages.length) note('История пустая — напишите задачу.');
+        scrollDown();
+      }
+
       async function connect() {
         if (!tg || !tg.initData) {
           note('Откройте пульт из Telegram: кнопкой в меню бота.', 'err');
@@ -325,6 +343,7 @@
         token = data.token;
         renderState(data.state);
         subscribe();
+        void loadHistory();
       }
 
       function subscribe() {
@@ -469,6 +488,7 @@
           el.newName.value = '';
           renderState(next);
           closeSheets();
+          void loadHistory();
         }
       };
 

@@ -91,6 +91,7 @@ export function loadConfig(envFile = path.resolve(process.cwd(), '.env')) {
 
   const workspacesDir = toPath(pick(fileEnv, 'WORKSPACES_DIR', ''), '/var/lib/telegram-pult/workspaces');
   const sessionsFile = toPath(pick(fileEnv, 'SESSIONS_FILE', ''), path.join(workspacesDir, '..', 'sessions.json'));
+  const historyFile = toPath(pick(fileEnv, 'HISTORY_FILE', ''), path.join(workspacesDir, '..', 'history.json'));
   const logFile = toPath(pick(fileEnv, 'LOG_FILE', ''), path.join(workspacesDir, '..', 'logs', 'pult.log'));
 
   return {
@@ -100,6 +101,8 @@ export function loadConfig(envFile = path.resolve(process.cwd(), '.env')) {
     model: pick(fileEnv, 'MODEL', 'opencode/big-pickle'),
     workspacesDir,
     sessionsFile,
+    historyFile,
+    historyLimit: toInt(pick(fileEnv, 'HISTORY_LIMIT', '200'), 200, { min: 20, max: 5000, name: 'HISTORY_LIMIT' }),
     logFile,
     logMaxBytes: toInt(pick(fileEnv, 'LOG_MAX_BYTES', '5242880'), 5242880, { min: 65536, name: 'LOG_MAX_BYTES' }),
     logMaxFiles: toInt(pick(fileEnv, 'LOG_MAX_FILES', '3'), 3, { min: 1, max: 50, name: 'LOG_MAX_FILES' }),

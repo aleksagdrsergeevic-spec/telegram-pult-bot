@@ -92,7 +92,7 @@ function sendJson(res, status, body) {
   res.end(payload);
 }
 
-export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, withWorkspaceLock, botUsername }) {
+export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, withWorkspaceLock, botUsername, history }) {
   /** token -> { userId, expiresAt } */
   const tokens = new Map();
   /** активные SSE-клиенты */
@@ -172,6 +172,7 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
     const model = session.model || cfg.model;
     const started = Date.now();
     broadcast(userId, { type: 'start', session: session.name, model });
+    if (history) history.append(session.name, 'user', text);
 
     let idleTimer = null;
     let idleNoticeSent = 0;
@@ -203,6 +204,10 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
 
       if (res.sessionId) store.setOpenCodeSession(session.name, res.sessionId);
       if (!res.missing) store.markRun(session.name);
+      if (history) {
+        const text = stripAnsi(res.output || '').trim();
+        history.append(session.name, 'assistant', text || (res.missing ? 'OpenCode не найден на сервере' : '(пустой вывод)'));
+      }
 
       broadcast(userId, {
         type: 'done',
@@ -268,8 +273,17 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
       return;
     }
 
-    if (route === 'GET /api/models') {
-      if (Date.now() - modelsCache.at > 10 * 60 * 1000) {
+    if (route === 'GET /api/history') {
+      const current = store.getCurrent();
+      const name = url.searchParams.get('session') || (current && current.name) || '';
+      sendJson(res, 200, {
+        session: name,
+        messages: history ? history.list(name, 100) : [],
+      });
+      return;
+    }
+
+    if (route === 'GET /api/models') {      if (Date.now() - modelsCache.at > 10 * 60 * 1000) {
         const result = await oc.models().catch(() => ({ code: -1, text: '' }));
         const list = String(result.text || '')
           .split('\n')
