@@ -47,7 +47,19 @@
         white-space: nowrap;
       }
       .pill b { font-weight: 600; }
-      .status { margin-left: auto; font-size: 12px; color: var(--hint); white-space: nowrap; }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #e0524f;
+        flex: 0 0 auto;
+        margin-left: auto;
+      }
+      .dot.on {
+        background: #3ccf6e;
+        box-shadow: 0 0 8px rgba(60, 207, 110, 0.7);
+      }
+      .status { margin-left: 6px; font-size: 12px; color: var(--hint); white-space: nowrap; }
       .status.busy { color: var(--accent); }
       main {
         flex: 1 1 auto;
@@ -65,6 +77,7 @@
         word-break: break-word;
         font-size: 14px;
       }
+      .msg.queued { opacity: 0.55; }
       .me { align-self: flex-end; background: var(--accent); color: var(--accent-text); border-bottom-right-radius: 5px; }
       .bot { align-self: flex-start; background: var(--bg2); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
       .bot code, .bot pre { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
@@ -161,6 +174,7 @@
     <header>
       <button class="pill" id="sessionBtn">📁 <b id="sessionName">…</b></button>
       <button class="pill" id="modelBtn">🤖 <b id="modelName">…</b></button>
+      <span class="dot" id="dot"></span>
       <span class="status" id="status"></span>
     </header>
 
@@ -204,6 +218,7 @@
         send: document.getElementById('sendBtn'),
         stop: document.getElementById('stopBtn'),
         status: document.getElementById('status'),
+        dot: document.getElementById('dot'),
         sessionName: document.getElementById('sessionName'),
         modelName: document.getElementById('modelName'),
         sessionBtn: document.getElementById('sessionBtn'),
@@ -228,15 +243,21 @@
       }
 
       function tick() {
+        const queued = state && state.queued ? state.queued : 0;
         if (!state || !state.task) {
-          el.status.textContent = '';
+          el.dot.classList.remove('on');
+          el.status.textContent = queued ? 'в очереди: ' + queued : '';
           el.status.classList.remove('busy');
           return;
         }
         const elapsed = Math.round((now() - state.task.startedAt) / 1000);
         const quiet = Math.round((now() - (state.task.lastOutputAt || state.task.startedAt)) / 1000);
+        el.dot.classList.add('on');
         el.status.textContent =
-          (quiet >= 30 ? 'молчит ' + dur(quiet) : 'работает') + ' · ' + dur(elapsed);
+          (quiet >= 30 ? 'молчит ' + dur(quiet) : 'работает') +
+          ' · ' +
+          dur(elapsed) +
+          (queued ? ' · в очереди: ' + queued : '');
         el.status.classList.add('busy');
       }
       setInterval(tick, 1000);
@@ -388,6 +409,7 @@
           note('▶ ' + data.session + ' · ' + data.model);
           if (!state) state = {};
           state.task = { startedAt: now(), lastOutputAt: now() };
+          if (state.queued) state.queued = Math.max(0, state.queued - 1);
           setBusy(true);
         });
         es.addEventListener('chunk', (e) => {
@@ -453,17 +475,29 @@
 
       function send() {
         const text = el.input.value.trim();
-        if (!text || busy) return;
+        if (!text) return;
         el.input.value = '';
         el.input.style.height = 'auto';
-        bubble(text, 'me');
-        current = null;
+        const mine = bubble(text, 'me');
+        if (busy) mine.classList.add('queued');
         void fetch('/api/prompt', {
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
           body: JSON.stringify({ text }),
-        });
-        setBusy(true);
+        })
+          .then(async (res) => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              note(data.error || 'ошибка ' + res.status, 'err');
+              return;
+            }
+            if (data.queued) note('в очереди: ' + data.position);
+          })
+          .catch(() => note('не смог отправить', 'err'));
+        if (!busy) {
+          current = null;
+          setBusy(true);
+        }
       }
 
       el.send.onclick = send;

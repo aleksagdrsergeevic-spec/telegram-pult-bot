@@ -97,7 +97,25 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
   const tokens = new Map();
   /** активные SSE-клиенты */
   const clients = new Set();
+  /** userId -> сообщения, ждущие своей очереди */
+  const queues = new Map();
+  /** кто сейчас выполняет задачу */
+  const activeUsers = new Set();
   let modelsCache = { at: 0, list: [] };
+  const MAX_QUEUE = 10;
+
+  function drainQueue(userId) {
+    const list = queues.get(userId);
+    if (!list || !list.length) return;
+    if (activeUsers.has(userId)) return;
+    const text = list.shift();
+    if (!list.length) queues.delete(userId);
+    activeUsers.add(userId);
+    void runPrompt(userId, text).finally(() => {
+      activeUsers.delete(userId);
+      drainQueue(userId);
+    });
+  }
 
   function allowed(userId) {
     if (cfg.allowedChatIds.length === 0) return false;
@@ -150,6 +168,7 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
       task: task
         ? { name: task.name, startedAt: task.startedAt, lastOutputAt: task.lastOutputAt || task.startedAt }
         : null,
+      queued: (queues.get(String(userId)) || []).length,
     };
   }
 
@@ -359,8 +378,37 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
         sendJson(res, 400, { error: 'пустой запрос' });
         return;
       }
+      if (text.length > cfg.promptMaxLength) {
+        sendJson(res, 400, { error: `слишком длинный запрос (максимум ${cfg.promptMaxLength})` });
+        return;
+      }
+
+      if (activeUsers.has(session.userId) || activeTasks.has(session.userId)) {
+        const list = queues.get(session.userId) || [];
+        if (list.length >= 10) {
+          sendJson(res, 429, { error: `очередь переполнена (${10})` });
+          return;
+        }
+        list.push(text);
+        queues.set(session.userId, list);
+        broadcast(session.userId, { type: 'notice', message: `добавлено в очередь: ${list.length}` });
+        sendJson(res, 202, { queued: true, position: list.length });
+        return;
+      }
+
       sendJson(res, 202, { accepted: true });
-      void runPrompt(session.userId, text);
+      activeUsers.add(session.userId);
+      void runPrompt(session.userId, text).finally(() => {
+        activeUsers.delete(session.userId);
+        drainQueue(session.userId);
+      });
+      return;
+    }
+
+    if (route === 'POST /api/queue/clear') {
+      queues.delete(session.userId);
+      broadcast(session.userId, { type: 'notice', message: 'очередь очищена' });
+      sendJson(res, 200, stateFor(session.userId));
       return;
     }
 
@@ -380,7 +428,8 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
       }
       if (task) {
         task.kill('stop');
-        broadcast(session.userId, { type: 'notice', message: 'останавливаю задачу…' });
+        queues.delete(session.userId);
+        broadcast(session.userId, { type: 'notice', message: 'останавливаю задачу, очередь очищена' });
         log.info(`web: стоп для ${session.userId}`);
       }
       sendJson(res, 200, { stopped: !!task });
