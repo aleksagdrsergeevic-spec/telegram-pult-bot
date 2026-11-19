@@ -7,41 +7,75 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
       :root {
-        --bg: var(--tg-theme-bg-color, #0f1115);
-        --bg2: var(--tg-theme-secondary-bg-color, #171a21);
-        --text: var(--tg-theme-text-color, #e8eaed);
-        --hint: var(--tg-theme-hint-color, #8b93a1);
-        --accent: var(--tg-theme-button-color, #4f8cff);
-        --accent-text: var(--tg-theme-button-text-color, #fff);
-        --line: rgba(255, 255, 255, 0.08);
+        --bg: #07060d;
+        --bg2: #100c1c;
+        --text: #efeafd;
+        --hint: #9b90b8;
+        --accent: #8b5cf6;
+        --accent2: #c084fc;
+        --accent-text: #fff;
+        --line: rgba(167, 139, 250, 0.16);
       }
       * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
       html, body { height: 100%; margin: 0; }
       body {
-        background: var(--bg);
+        background-color: var(--bg);
+        background-image:
+          radial-gradient(900px 520px at 12% -12%, rgba(124, 58, 237, 0.42), transparent 62%),
+          radial-gradient(760px 520px at 92% 6%, rgba(192, 132, 252, 0.22), transparent 60%),
+          radial-gradient(820px 640px at 50% 112%, rgba(76, 29, 149, 0.42), transparent 62%);
+        background-attachment: fixed;
         color: var(--text);
         font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         display: flex;
         flex-direction: column;
         overflow: hidden;
+        position: relative;
       }
+      .bg {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        z-index: 0;
+      }
+      .blob {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(70px);
+        opacity: 0.5;
+        animation: float 18s ease-in-out infinite;
+      }
+      .blob.b1 { width: 320px; height: 320px; left: -90px; top: 12%; background: #6d28d9; }
+      .blob.b2 { width: 280px; height: 280px; right: -80px; top: 48%; background: #a855f7; animation-delay: -7s; }
+      @keyframes float {
+        0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+        50% { transform: translate3d(26px, -30px, 0) scale(1.12); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .blob { animation: none; }
+      }
+      header, main, footer, .sheet { position: relative; z-index: 1; }
       header {
         display: flex;
         gap: 6px;
         align-items: center;
         padding: 8px 10px;
         border-bottom: 1px solid var(--line);
-        background: var(--bg2);
+        background: rgba(16, 12, 28, 0.72);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
         flex: 0 0 auto;
       }
+      .logo { width: 22px; height: 22px; flex: 0 0 auto; }
       .pill {
-        background: rgba(255, 255, 255, 0.06);
+        background: rgba(139, 92, 246, 0.14);
         color: var(--text);
-        border: 0;
+        border: 1px solid var(--line);
         border-radius: 999px;
         padding: 6px 11px;
         font-size: 13px;
-        max-width: 46vw;
+        max-width: 44vw;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -51,13 +85,14 @@
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background: #e0524f;
+        background: #f87171;
+        box-shadow: 0 0 8px rgba(248, 113, 113, 0.7);
         flex: 0 0 auto;
         margin-left: auto;
       }
       .dot.on {
-        background: #3ccf6e;
-        box-shadow: 0 0 8px rgba(60, 207, 110, 0.7);
+        background: #34d399;
+        box-shadow: 0 0 10px rgba(52, 211, 153, 0.8);
       }
       .status { margin-left: 6px; font-size: 12px; color: var(--hint); white-space: nowrap; }
       .status.busy { color: var(--accent); }
@@ -78,11 +113,35 @@
         font-size: 14px;
       }
       .msg.queued { opacity: 0.55; }
-      .me { align-self: flex-end; background: var(--accent); color: var(--accent-text); border-bottom-right-radius: 5px; }
-      .bot { align-self: flex-start; background: var(--bg2); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+      .me {
+        align-self: flex-end;
+        background: linear-gradient(135deg, #7c3aed, #a855f7);
+        color: #fff;
+        border-bottom-right-radius: 5px;
+        box-shadow: 0 6px 20px rgba(124, 58, 237, 0.35);
+      }
+      .bot {
+        align-self: flex-start;
+        background: rgba(139, 92, 246, 0.1);
+        border: 1px solid rgba(167, 139, 250, 0.24);
+        border-bottom-left-radius: 5px;
+      }
       .bot code, .bot pre { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
       .note { align-self: center; color: var(--hint); font-size: 12px; text-align: center; }
-      .err { align-self: center; color: #ff6b6b; font-size: 13px; text-align: center; }
+      .err { align-self: center; color: #f87171; font-size: 13px; text-align: center; }
+      .hero {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        margin: auto 0;
+        padding: 24px 20px;
+        text-align: center;
+      }
+      .hero[hidden] { display: none; }
+      .hero-logo { width: 78px; height: 78px; filter: drop-shadow(0 0 26px rgba(168, 85, 247, 0.55)); }
+      .hero-title { font-size: 19px; font-weight: 600; letter-spacing: 0.4px; }
+      .hero-sub { color: var(--hint); font-size: 13px; max-width: 260px; }
       .cursor::after { content: "▌"; opacity: 0.6; }
       footer {
         flex: 0 0 auto;
@@ -91,7 +150,9 @@
         align-items: flex-end;
         padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
         border-top: 1px solid var(--line);
-        background: var(--bg2);
+        background: rgba(16, 12, 28, 0.78);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
       }
       textarea {
         flex: 1 1 auto;
@@ -100,22 +161,23 @@
         padding: 10px 12px;
         border-radius: 12px;
         border: 1px solid var(--line);
-        background: var(--bg);
+        background: rgba(7, 6, 13, 0.7);
         color: var(--text);
         font: inherit;
       }
-      textarea:focus { outline: none; border-color: var(--accent); }
+      textarea:focus { outline: none; border-color: var(--accent2); box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15); }
       .send, .stop {
         width: 44px;
         height: 44px;
         border: 0;
         border-radius: 12px;
         font-size: 18px;
-        background: var(--accent);
-        color: var(--accent-text);
+        background: linear-gradient(135deg, #8b5cf6, #c084fc);
+        color: #fff;
+        box-shadow: 0 6px 18px rgba(139, 92, 246, 0.4);
         flex: 0 0 auto;
       }
-      .stop { background: #e0524f; }
+      .stop { background: linear-gradient(135deg, #b91c1c, #ef4444); box-shadow: 0 6px 18px rgba(185, 28, 28, 0.4); }
       .sheet {
         position: fixed;
         inset: 0;
@@ -171,14 +233,50 @@
     </style>
   </head>
   <body>
+    <div class="bg"><span class="blob b1"></span><span class="blob b2"></span></div>
     <header>
+      <svg class="logo" viewBox="0 0 40 40" aria-hidden="true">
+        <defs>
+          <linearGradient id="spark1" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#e9d5ff" />
+            <stop offset="1" stop-color="#7c3aed" />
+          </linearGradient>
+          <filter id="glow1"><feGaussianBlur stdDeviation="1.4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+        </defs>
+        <g fill="url(#spark1)" filter="url(#glow1)" transform="translate(20 20)">
+          <rect x="-2" y="-16" width="4" height="32" rx="2" />
+          <rect x="-2" y="-16" width="4" height="32" rx="2" transform="rotate(45)" />
+          <rect x="-2" y="-16" width="4" height="32" rx="2" transform="rotate(90)" />
+          <rect x="-2" y="-16" width="4" height="32" rx="2" transform="rotate(135)" />
+        </g>
+      </svg>
       <button class="pill" id="sessionBtn">📁 <b id="sessionName">…</b></button>
       <button class="pill" id="modelBtn">🤖 <b id="modelName">…</b></button>
       <span class="dot" id="dot"></span>
       <span class="status" id="status"></span>
     </header>
 
-    <main id="log"></main>
+    <main id="log">
+      <div class="hero" id="hero">
+        <svg class="hero-logo" viewBox="0 0 40 40" aria-hidden="true">
+          <defs>
+            <linearGradient id="spark2" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#f5f3ff" />
+              <stop offset="1" stop-color="#8b5cf6" />
+            </linearGradient>
+            <filter id="glow2"><feGaussianBlur stdDeviation="1.2" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+          </defs>
+          <g fill="url(#spark2)" filter="url(#glow2)" transform="translate(20 20)">
+            <rect x="-1.9" y="-15" width="3.8" height="30" rx="1.9" />
+            <rect x="-1.9" y="-15" width="3.8" height="30" rx="1.9" transform="rotate(45)" />
+            <rect x="-1.9" y="-15" width="3.8" height="30" rx="1.9" transform="rotate(90)" />
+            <rect x="-1.9" y="-15" width="3.8" height="30" rx="1.9" transform="rotate(135)" />
+          </g>
+        </svg>
+        <div class="hero-title">Пульт</div>
+        <div class="hero-sub">Напишите задачу — OpenCode выполнит её в выбранной папке</div>
+      </div>
+    </main>
 
     <footer>
       <textarea id="input" rows="1" placeholder="Задача для OpenCode…"></textarea>
@@ -209,7 +307,8 @@
       if (tg) {
         tg.ready();
         tg.expand();
-        if (tg.setHeaderColor) tg.setHeaderColor('secondary_bg_color');
+        if (tg.setHeaderColor) tg.setHeaderColor('#07060d');
+        if (tg.setBackgroundColor) tg.setBackgroundColor('#07060d');
       }
 
       const el = {
@@ -219,6 +318,7 @@
         stop: document.getElementById('stopBtn'),
         status: document.getElementById('status'),
         dot: document.getElementById('dot'),
+        hero: document.getElementById('hero'),
         sessionName: document.getElementById('sessionName'),
         modelName: document.getElementById('modelName'),
         sessionBtn: document.getElementById('sessionBtn'),
@@ -360,20 +460,27 @@
         return data;
       }
 
+      function showHero(value) {
+        if (!el.hero) return;
+        el.hero.hidden = !value;
+      }
+
       async function loadHistory() {
         el.log.textContent = '';
+        el.log.appendChild(el.hero);
         const name = state && state.current ? state.current.name : '';
         if (!name) {
+          showHero(true);
           note('Нет сессии — откройте список папок и создайте её.');
           return;
         }
         const data = await api('/api/history?session=' + encodeURIComponent(name));
         if (!data) return;
         const messages = data.messages || [];
+        showHero(messages.length === 0);
         for (const item of messages) {
           bubble(item.text, item.role === 'user' ? 'me' : 'bot');
         }
-        if (!messages.length) note('История пустая — напишите задачу.');
         scrollDown();
       }
 
@@ -406,6 +513,7 @@
           const data = JSON.parse(e.data);
           current = bubble('', 'bot');
           current.classList.add('cursor');
+          showHero(false);
           note('▶ ' + data.session + ' · ' + data.model);
           if (!state) state = {};
           state.task = { startedAt: now(), lastOutputAt: now() };
@@ -479,6 +587,7 @@
         el.input.value = '';
         el.input.style.height = 'auto';
         const mine = bubble(text, 'me');
+        showHero(false);
         if (busy) mine.classList.add('queued');
         void fetch('/api/prompt', {
           method: 'POST',
