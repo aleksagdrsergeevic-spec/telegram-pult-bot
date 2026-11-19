@@ -74,20 +74,40 @@ function splitText(text, size = MAX_MESSAGE) {
 /* Блокировка по рабочей папке                                         */
 /* ------------------------------------------------------------------ */
 
-async function withWorkspaceLock(key, fn) {
-  const prev = workspaceLocks.get(key) || Promise.resolve();
+/** Если задача держит папку дольше таймаута задачи, блокировка считается зависшей. */
+function staleLockMs() {
+  return cfg.taskTimeoutMs + 120000;
+}
+
+async function withWorkspaceLock(key, fn, owner = '') {
+  const now = Date.now();
+  let entry = workspaceLocks.get(key);
+  if (entry && now - entry.since > staleLockMs()) {
+    log.warn(`блокировка «${key}» висит ${Math.round((now - entry.since) / 1000)} с — снимаю принудительно`);
+    workspaceLocks.delete(key);
+    entry = undefined;
+  }
+
+  const prev = entry ? entry.tail : Promise.resolve();
   let release;
   const gate = new Promise((resolve) => {
     release = resolve;
   });
   const tail = prev.then(() => gate);
-  workspaceLocks.set(key, tail);
+  const mine = { tail, since: now, owner: owner || '—' };
+  workspaceLocks.set(key, mine);
+
+  const waitedAt = Date.now();
   try {
     await prev;
+    const waited = Date.now() - waitedAt;
+    if (waited > 30000) {
+      log.warn(`ждал блокировку «${key}» ${Math.round(waited / 1000)} с`);
+    }
     return await fn();
   } finally {
     release();
-    if (workspaceLocks.get(key) === tail) workspaceLocks.delete(key);
+    if (workspaceLocks.get(key) === mine) workspaceLocks.delete(key);
   }
 }
 
@@ -248,6 +268,16 @@ function buildFinalText({ res, sessionName, elapsed }) {
       .join('\n')
       .trim();
   }
+  if (res.idle) {
+    return [
+      `⏸ Задача остановлена: ${formatDuration(cfg.idleTimeoutMs)} без единой строки вывода.`,
+      'Похоже, OpenCode встал на входе в аккаунт или потерял связь с моделью.',
+      '',
+      body,
+    ]
+      .join('\n')
+      .trim();
+  }
   if (res.stopped) {
     return [`⏹ Остановлено (${elapsed}).`, '', body].join('\n').trim();
   }
@@ -372,6 +402,7 @@ async function runTask(chatId, prompt) {
       resume,
       model: session.model || cfg.model,
       timeoutMs: cfg.taskTimeoutMs,
+      idleTimeoutMs: cfg.idleTimeoutMs,
       onChunk,
     });
     activeTasks.set(key, { name: session.name, startedAt: started, kill: handle.kill, prompt });
@@ -380,7 +411,7 @@ async function runTask(chatId, prompt) {
 
   let res;
   try {
-    res = await withWorkspaceLock(session.name, () => runOnce(session.openCodeSessionId, session.hasRun));
+    res = await withWorkspaceLock(session.name, () => runOnce(session.openCodeSessionId, session.hasRun), key);
 
     if (
       res &&
@@ -397,7 +428,7 @@ async function runTask(chatId, prompt) {
       if (streamer) streamer.reset();
       const fresh = store.get(session.name) || session;
       session = fresh;
-      res = await withWorkspaceLock(session.name, () => runOnce(null, false));
+      res = await withWorkspaceLock(session.name, () => runOnce(null, false), key);
     }
 
     if (res && !res.missing) {
@@ -602,7 +633,20 @@ async function handleStatus(chatId) {
 }
 
 async function handleStop(chatId) {
-  const task = activeTasks.get(String(chatId));
+  const key = String(chatId);
+  let task = activeTasks.get(key);
+  if (!task) {
+    // Задача могла быть запущена из MiniApp или из другого чата в той же папке.
+    const current = store.getCurrent();
+    if (current) {
+      for (const [, running] of activeTasks) {
+        if (running.name === current.name) {
+          task = running;
+          break;
+        }
+      }
+    }
+  }
   if (!task) {
     await tg.sendMessage(chatId, 'Нечего останавливать.').catch(() => {});
     return;

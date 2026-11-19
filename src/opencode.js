@@ -142,7 +142,16 @@ export class OpenCode {
   /**
    * Запуск задачи. Возвращает handle { pid, kill(reason), promise }.
    */
-  start({ cwd, prompt, sessionId = null, resume = false, model = null, timeoutMs = 1200000, onChunk = null }) {
+  start({
+    cwd,
+    prompt,
+    sessionId = null,
+    resume = false,
+    model = null,
+    timeoutMs = 1200000,
+    idleTimeoutMs = 300000,
+    onChunk = null,
+  }) {
     const args = this.buildArgs({ prompt, sessionId, resume, model });
     this.log.info(`opencode run в ${cwd} (sessionId=${sessionId || '—'}, model=${model || this.model}, resume=${resume})`);
 
@@ -191,6 +200,7 @@ export class OpenCode {
       clearTimeout(timeoutTimer);
       clearTimeout(hardKillTimer);
       clearTimeout(forceDeadline);
+      if (idleTimer) clearInterval(idleTimer);
       const match = /ses_[A-Za-z0-9]{8,}/.exec(output);
       resolveFn({
         sessionId: match ? match[0] : null,
@@ -245,6 +255,7 @@ export class OpenCode {
           code: -1,
           timedOut: killedBy === 'timeout',
           stopped: killedBy === 'stop',
+          idle: killedBy === 'idle',
           hang: true,
         });
       }, 20000);
@@ -270,8 +281,49 @@ export class OpenCode {
         signal: signal || null,
         timedOut: killedBy === 'timeout',
         stopped: killedBy === 'stop',
+        idle: killedBy === 'idle',
       });
     });
+
+    // Процесс может выйти, но оставить открытыми pipe-ы (внутренние серверы
+    // OpenCode). Тогда 'close' не приходит никогда и задача «висит». По 'exit'
+    // закрываем её принудительно.
+    let exited = null;
+    child.on('exit', (code, signal) => {
+      exited = { code: code ?? -1, signal: signal || null };
+      const timer = setTimeout(() => {
+        if (settled) return;
+        this.log.warn(`opencode вышел, но потоки не закрылись — завершаю задачу принудительно`);
+        try {
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+        } catch {
+          /* ignore */
+        }
+        finalize({
+          code: exited.code,
+          signal: exited.signal,
+          timedOut: killedBy === 'timeout',
+          stopped: killedBy === 'stop',
+          idle: killedBy === 'idle',
+          hang: true,
+        });
+      }, 2000);
+      if (typeof timer.unref === 'function') timer.unref();
+    });
+
+    // Сторож тишины: если вывода нет слишком долго, задача, скорее всего, встала.
+    let idleTimer = null;
+    if (idleTimeoutMs > 0) {
+      idleTimer = setInterval(() => {
+        if (settled) return;
+        if (Date.now() - lastOutputAt > idleTimeoutMs) {
+          this.log.warn(`opencode молчит ${Math.round((Date.now() - lastOutputAt) / 1000)} с — останавливаю`);
+          kill('idle');
+        }
+      }, 15000);
+      if (typeof idleTimer.unref === 'function') idleTimer.unref();
+    }
 
     return {
       pid: child.pid,

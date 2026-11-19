@@ -126,6 +126,11 @@ export function loadConfig(envFile = path.resolve(process.cwd(), '.env')) {
       max: 3900,
       name: 'STREAM_WINDOW',
     }),
+    idleTimeoutMs: toInt(pick(fileEnv, 'IDLE_TIMEOUT_MS', '300000'), 300000, {
+      min: 60000,
+      max: 60 * 60 * 1000,
+      name: 'IDLE_TIMEOUT_MS',
+    }),
     streaming: pick(fileEnv, 'STREAMING', '0') === '1',
     webEnabled: pick(fileEnv, 'WEB_ENABLED', '1') !== '0',
     webHost: pick(fileEnv, 'WEB_HOST', '127.0.0.1'),

@@ -357,7 +357,6 @@
           note('▶ ' + data.session + ' · ' + data.model);
           setBusy(true);
         });
-
         es.addEventListener('chunk', (e) => {
           const data = JSON.parse(e.data);
           if (!current) current = bubble('', 'bot');

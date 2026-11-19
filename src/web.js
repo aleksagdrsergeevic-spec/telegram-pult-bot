@@ -186,6 +186,7 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
           resume: session.hasRun,
           model,
           timeoutMs: cfg.taskTimeoutMs,
+          idleTimeoutMs: cfg.idleTimeoutMs,
           onChunk: (chunk) => broadcast(userId, { type: 'chunk', text: chunk }),
         });
         activeTasks.set(key, { name: session.name, startedAt: started, kill: handle.kill, prompt: text });
@@ -345,7 +346,19 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
     }
 
     if (route === 'POST /api/stop') {
-      const task = activeTasks.get(session.userId);
+      let task = activeTasks.get(session.userId);
+      if (!task) {
+        // Задача могла быть запущена из Telegram или другого чата в той же папке.
+        const current = store.getCurrent();
+        if (current) {
+          for (const [, running] of activeTasks) {
+            if (running.name === current.name) {
+              task = running;
+              break;
+            }
+          }
+        }
+      }
       if (task) {
         task.kill('stop');
         broadcast(session.userId, { type: 'notice', message: 'останавливаю задачу…' });
