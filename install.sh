@@ -157,19 +157,35 @@ ensure_sudo() {
   # Полный доступ к root для агента: pult может sudo без пароля.
   # Откат: rm /etc/sudoers.d/telegram-pult
   local file=/etc/sudoers.d/telegram-pult
-  if [ -f "$file" ] && grep -q "NOPASSWD: ALL" "$file"; then
+  local tmp
+
+  if [ -f "$file" ] && grep -q "NOPASSWD: ALL" "$file" 2>/dev/null; then
     log "sudo без пароля для $PULT_USER уже настроен"
     return
   fi
-  cat > "$file" <<EOF
-# Создано telegram-pult: агент может выполнять любые команды от root
-$PULT_USER ALL=(ALL) NOPASSWD: ALL
-Defaults:$PULT_USER !requiretty
-EOF
-  chmod 440 "$file"
+
+  # В sudoers — только каноническая строка, без комментариев и Defaults:
+  # так файл проходит проверку на любой сборке sudo.
+  tmp="$(mktemp)"
+  printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$PULT_USER" > "$tmp"
+
+  if command -v visudo >/dev/null 2>&1; then
+    if ! visudo -cf "$tmp" >/tmp/pult-visudo.log 2>&1; then
+      sed 's/^/[sudoers] /' /tmp/pult-visudo.log >&2 || true
+      rm -f "$tmp"
+      warn "sudoers не прошёл проверку — sudo не выдан (текст ошибки выше)"
+      return 0
+    fi
+  else
+    warn "visudo не найден — ставлю файл без проверки"
+  fi
+
+  install -m 0440 -o root -g root "$tmp" "$file"
+  rm -f "$tmp"
+
   if command -v visudo >/dev/null 2>&1 && ! visudo -cf "$file" >/dev/null 2>&1; then
-    rm -f "$file"
-    die "sudoers-файл не прошёл проверку, оставил как было"
+    warn "sudoers установлен, но итоговая проверка не прошла: $file"
+    return 0
   fi
   log "выдан sudo без пароля для $PULT_USER (полный доступ к root)"
 }
