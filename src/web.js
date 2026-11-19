@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { stripAnsi } from './opencode.js';
+import { saveImage } from './uploads.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const INDEX_PATH = path.join(HERE, '..', 'web', 'index.html');
@@ -56,13 +57,13 @@ function verifyInitData(initData, botToken) {
   return { userId: String(user.id), user };
 }
 
-function readBody(req) {
+function readBody(req, limit = MAX_BODY) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (chunk) => {
       size += chunk.length;
-      if (size > MAX_BODY) {
+      if (size > limit) {
         reject(new Error('слишком большой запрос'));
         req.destroy();
         return;
@@ -372,14 +373,49 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
     }
 
     if (route === 'POST /api/prompt') {
-      const body = await readBody(req);
-      const text = String(body.text || '').trim();
-      if (!text) {
+      const bodyLimit = cfg.uploadMaxBytes * cfg.uploadMaxFiles * 2 + 512 * 1024;
+      const body = await readBody(req, bodyLimit);
+      let text = String(body.text || '').trim();
+      const rawFiles = Array.isArray(body.files) ? body.files.slice(0, cfg.uploadMaxFiles) : [];
+      const session = store.getCurrent();
+
+      if (!text && !rawFiles.length) {
         sendJson(res, 400, { error: 'пустой запрос' });
         return;
       }
       if (text.length > cfg.promptMaxLength) {
         sendJson(res, 400, { error: `слишком длинный запрос (максимум ${cfg.promptMaxLength})` });
+        return;
+      }
+
+      const saved = [];
+      for (const item of rawFiles) {
+        const match = /^data:([^;,]+);base64,(.+)$/s.exec(String((item && item.data) || ''));
+        if (!match) continue;
+        const buffer = Buffer.from(match[2], 'base64');
+        if (buffer.length > cfg.uploadMaxBytes) {
+          sendJson(res, 413, { error: `файл больше ${Math.round(cfg.uploadMaxBytes / 1024 / 1024)} МБ` });
+          return;
+        }
+        if (!session) {
+          sendJson(res, 400, { error: 'сначала создайте сессию' });
+          return;
+        }
+        saved.push(
+          saveImage({
+            dir: path.join(cfg.uploadsDir, session.name),
+            buffer,
+            mime: match[1],
+            nameHint: item.name,
+          }),
+        );
+      }
+      if (saved.length) {
+        text = `Приложены изображения — открой их через read и учти содержимое:\n${saved.map((p) => `- ${p}`).join('\n')}\n\n${text}`;
+        log.info(`web: сохранено вложений ${saved.length}`);
+      }
+      if (!text) {
+        sendJson(res, 400, { error: 'нет ни текста, ни файлов' });
         return;
       }
 
@@ -392,11 +428,11 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
         list.push(text);
         queues.set(session.userId, list);
         broadcast(session.userId, { type: 'notice', message: `добавлено в очередь: ${list.length}` });
-        sendJson(res, 202, { queued: true, position: list.length });
+        sendJson(res, 202, { queued: true, position: list.length, files: saved.length });
         return;
       }
 
-      sendJson(res, 202, { accepted: true });
+      sendJson(res, 202, { accepted: true, files: saved.length });
       activeUsers.add(session.userId);
       void runPrompt(session.userId, text).finally(() => {
         activeUsers.delete(session.userId);

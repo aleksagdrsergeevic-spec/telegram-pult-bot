@@ -11,6 +11,7 @@ import { SessionStore } from './sessions.js';
 import { OpenCode, stripAnsi } from './opencode.js';
 import { startWebServer } from './web.js';
 import { HistoryStore } from './history.js';
+import { isImageMime, saveImage, imagePromptPrefix } from './uploads.js';
 
 const MAX_MESSAGE = 4000;
 const MAX_QUEUE = 5;
@@ -753,18 +754,58 @@ async function handleMessage(msg) {
     return;
   }
 
-  const text = typeof msg.text === 'string' ? msg.text.trim() : '';
-  if (!text) {
-    await tg.sendMessage(chatId, 'Пока понимаю только текст. Пришлите задачу текстом.').catch(() => {});
+  let text = typeof msg.text === 'string' ? msg.text.trim() : '';
+
+  // Вложение: фото (берём самый большой размер) или файл-картинка.
+  const photo = Array.isArray(msg.photo) && msg.photo.length ? msg.photo[msg.photo.length - 1] : null;
+  const document = msg.document && isImageMime(msg.document.mime_type) ? msg.document : null;
+  const attachment = photo || document;
+
+  if (!text && !attachment) {
+    await tg.sendMessage(chatId, 'Пришлите текст задачи или фото.').catch(() => {});
     return;
   }
 
-  if (text.startsWith('/')) {
+  if (text.startsWith('/') && !attachment) {
     await handleCommand(chatId, text);
     return;
   }
 
-  enqueueTask(chatId, text);
+  let prefix = '';
+  if (attachment) {
+    const session = store.getCurrent();
+    if (!session) {
+      await tg.sendMessage(chatId, 'Сначала создайте сессию: /new <имя>').catch(() => {});
+      return;
+    }
+    const caption = typeof msg.caption === 'string' ? msg.caption.trim() : '';
+    try {
+      const info = await tg.getFile(attachment.file_id);
+      const size = info && info.file_size ? Number(info.file_size) : 0;
+      if (size > cfg.uploadMaxBytes) {
+        await tg
+          .sendMessage(chatId, `Файл слишком большой: ${Math.round(size / 1024 / 1024)} МБ (максимум ${Math.round(cfg.uploadMaxBytes / 1024 / 1024)} МБ).`)
+          .catch(() => {});
+        return;
+      }
+      const buffer = await tg.downloadFile(info.file_path);
+      const saved = saveImage({
+        dir: path.join(cfg.uploadsDir, session.name),
+        buffer,
+        mime: attachment.mime_type || 'image/jpeg',
+        nameHint: attachment.file_name || info.file_path,
+      });
+      prefix = imagePromptPrefix([saved]);
+      log.info(`вложение сохранено: ${saved} (${buffer.length} б)`);
+    } catch (err) {
+      log.error('не смог получить вложение', err);
+      await tg.sendMessage(chatId, `Не смог принять файл: ${err.message}`).catch(() => {});
+      return;
+    }
+    text = caption || 'Опиши, что на изображении. Если на нём есть задача — выполни её.';
+  }
+
+  enqueueTask(chatId, prefix + text);
 }
 
 function handleUpdate(update) {

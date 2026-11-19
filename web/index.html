@@ -146,13 +146,40 @@
       footer {
         flex: 0 0 auto;
         display: flex;
-        gap: 8px;
-        align-items: flex-end;
+        flex-direction: column;
+        gap: 6px;
         padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
         border-top: 1px solid var(--line);
         background: rgba(16, 12, 28, 0.78);
         backdrop-filter: blur(14px);
         -webkit-backdrop-filter: blur(14px);
+      }
+      .row { display: flex; gap: 8px; align-items: flex-end; }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+      .chips[hidden] { display: none; }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(139, 92, 246, 0.18);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 3px 9px;
+        font-size: 12px;
+        max-width: 60vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .chip button { background: none; border: 0; color: var(--hint); font-size: 12px; padding: 0; }
+      .attach {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: rgba(139, 92, 246, 0.14);
+        color: var(--text);
+        font-size: 17px;
+        flex: 0 0 auto;
       }
       textarea {
         flex: 1 1 auto;
@@ -279,9 +306,14 @@
     </main>
 
     <footer>
-      <textarea id="input" rows="1" placeholder="Задача для OpenCode…"></textarea>
-      <button class="send" id="sendBtn" title="Отправить">➤</button>
-      <button class="stop" id="stopBtn" title="Остановить задачу и очистить очередь" hidden>■</button>
+      <div class="chips" id="chips" hidden></div>
+      <div class="row">
+        <button class="attach" id="attachBtn" title="Прикрепить фото">📎</button>
+        <textarea id="input" rows="1" placeholder="Задача для OpenCode…"></textarea>
+        <button class="send" id="sendBtn" title="Отправить">➤</button>
+        <button class="stop" id="stopBtn" title="Остановить задачу и очистить очередь" hidden>■</button>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" multiple hidden />
     </footer>
 
     <div class="sheet" id="sessionSheet" hidden>
@@ -329,6 +361,9 @@
         modelsList: document.getElementById('modelsList'),
         newName: document.getElementById('newName'),
         createBtn: document.getElementById('createBtn'),
+        chips: document.getElementById('chips'),
+        attachBtn: document.getElementById('attachBtn'),
+        fileInput: document.getElementById('fileInput'),
       };
 
       let token = null;
@@ -337,6 +372,46 @@
       let current = null;
       let busy = false;
       let skew = 0;
+      let attached = [];
+
+      function renderChips() {
+        el.chips.textContent = '';
+        el.chips.hidden = attached.length === 0;
+        attached.forEach((file, index) => {
+          const chip = document.createElement('span');
+          chip.className = 'chip';
+          chip.textContent = (file.name || 'фото').slice(0, 40);
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.textContent = '✕';
+          remove.onclick = () => {
+            attached.splice(index, 1);
+            renderChips();
+          };
+          chip.appendChild(remove);
+          el.chips.appendChild(chip);
+        });
+      }
+
+      el.attachBtn.onclick = () => el.fileInput.click();
+      el.fileInput.onchange = async () => {
+        const picked = Array.from(el.fileInput.files || []).slice(0, 4 - attached.length);
+        el.fileInput.value = '';
+        for (const file of picked) {
+          if (file.size > 8 * 1024 * 1024) {
+            note('файл больше 8 МБ: ' + (file.name || 'фото'), 'err');
+            continue;
+          }
+          const data = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(file);
+          });
+          if (data) attached.push({ name: file.name || 'фото', data });
+        }
+        renderChips();
+      };
 
       function now() {
         return Date.now() - skew;
@@ -585,16 +660,19 @@
 
       function send() {
         const text = el.input.value.trim();
-        if (!text) return;
+        if (!text && !attached.length) return;
+        const files = attached.slice();
         el.input.value = '';
         el.input.style.height = 'auto';
-        const mine = bubble(text, 'me');
+        attached = [];
+        renderChips();
+        const mine = bubble(files.length ? `📎 ${files.length} · ${text || 'фото'}` : text, 'me');
         showHero(false);
         if (busy) mine.classList.add('queued');
         void fetch('/api/prompt', {
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({ text, files }),
         })
           .then(async (res) => {
             const data = await res.json().catch(() => ({}));
@@ -603,6 +681,7 @@
               return;
             }
             if (data.queued) note('в очереди: ' + data.position);
+            if (data.files) note('вложений: ' + data.files);
           })
           .catch(() => note('не смог отправить', 'err'));
         if (!busy) {

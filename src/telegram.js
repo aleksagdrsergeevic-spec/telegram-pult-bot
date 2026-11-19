@@ -138,6 +138,17 @@ export class Telegram {
     return this.call('sendChatAction', { chat_id: chatId, action }, { timeoutMs: 15000, retries: 0 });
   }
 
+  getFile(fileId) {
+    return this.call('getFile', { file_id: fileId }, { timeoutMs: 20000, retries: 2 });
+  }
+
+  async downloadFile(filePath) {
+    const url = `${this.apiBase}/file/bot${this.token}/${filePath}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(120000) });
+    if (!res.ok) throw new TelegramError(`downloadFile: HTTP ${res.status}`, res.status);
+    return Buffer.from(await res.arrayBuffer());
+  }
+
   answerCallbackQuery(callbackQueryId, text = '') {
     return this.call('answerCallbackQuery', { callback_query_id: callbackQueryId, text: clip(text, 200) }, {
       timeoutMs: 15000,

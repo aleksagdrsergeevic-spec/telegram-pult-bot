@@ -103,6 +103,13 @@ export function loadConfig(envFile = path.resolve(process.cwd(), '.env')) {
     sessionsFile,
     historyFile,
     historyLimit: toInt(pick(fileEnv, 'HISTORY_LIMIT', '200'), 200, { min: 20, max: 5000, name: 'HISTORY_LIMIT' }),
+    uploadsDir: toPath(pick(fileEnv, 'UPLOADS_DIR', ''), path.join(workspacesDir, '..', 'uploads')),
+    uploadMaxFiles: toInt(pick(fileEnv, 'UPLOAD_MAX_FILES', '4'), 4, { min: 1, max: 10, name: 'UPLOAD_MAX_FILES' }),
+    uploadMaxBytes: toInt(pick(fileEnv, 'UPLOAD_MAX_BYTES', '8388608'), 8388608, {
+      min: 65536,
+      max: 32 * 1024 * 1024,
+      name: 'UPLOAD_MAX_BYTES',
+    }),
     logFile,
     logMaxBytes: toInt(pick(fileEnv, 'LOG_MAX_BYTES', '5242880'), 5242880, { min: 65536, name: 'LOG_MAX_BYTES' }),
     logMaxFiles: toInt(pick(fileEnv, 'LOG_MAX_FILES', '3'), 3, { min: 1, max: 50, name: 'LOG_MAX_FILES' }),
