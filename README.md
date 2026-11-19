@@ -57,13 +57,15 @@ sudo bash install.sh --token=ВАШ_ТОКЕН --allowed=ВАШ_CHAT_ID
 **5. Войти в OpenCode** — без этого не будет бесплатных моделей:
 
 ```bash
-runuser -u pult -- env HOME=/var/lib/telegram-pult opencode auth login
+pult-opencode auth login
 ```
+
+(эту команду ставит `install.sh`; она сама заходит под пользователем `pult` в его папку)
 
 В списке выберите провайдер **OpenCode**, появится ссылка и код — откройте ссылку в Safari, войдите и вернитесь в SSH. Проверка:
 
 ```bash
-runuser -u pult -- env HOME=/var/lib/telegram-pult opencode models | grep big-pickle
+pult-opencode models | grep big-pickle
 ```
 
 Должно вывести `opencode/big-pickle`.
@@ -81,6 +83,7 @@ systemctl status telegram-pult
 Если на каком-то шаге ошибка:
 
 - `не задан TELEGRAM_BOT_TOKEN` — токен не попал в `/opt/telegram-pult/.env`; впишите и `systemctl restart telegram-pult`.
+- `EACCES: permission denied, lstat '/root/...'` — команда `runuser ... opencode` запущена из `/root`, куда у `pult` нет доступа. Используйте `pult-opencode auth login` (она сама делает `cd` в домашнюю папку `pult`) или сначала `cd /var/lib/telegram-pult`.
 - `opencode: command not found` — `npm i -g opencode-ai@latest`, затем `systemctl restart telegram-pult`.
 - В `/model` нет моделей `opencode/*` — не выполнен шаг 5 (`opencode auth login`).
 
@@ -192,10 +195,10 @@ opencode run --model opencode/big-pickle [--continue | --session <id>] "<тек�
 Провайдер `opencode` появляется только после входа в аккаунт OpenCode:
 
 ```bash
-runuser -u pult -- env HOME=/var/lib/telegram-pult opencode auth login
+pult-opencode auth login
 ```
 
-Тогда же стоит проверить список: `runuser -u pult -- env HOME=/var/lib/telegram-pult opencode models`.
+Тогда же стоит проверить список: `pult-opencode models`.
 
 Если Big Pickle станет платным или исчезнет, в `.env` можно поставить другую бесплатную модель из того же каталога (например `opencode/iceman-free` или `opencode/deepseek-v4.1-flash-free`), а также любую платную с вашим ключом провайдера.
 

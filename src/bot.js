@@ -576,7 +576,7 @@ async function handleModel(chatId) {
       lines.push('Модели провайдера opencode:', ...opencodeModels.slice(0, 25).map((m) => `• ${m}`));
     } else {
       lines.push('В списке нет моделей opencode/* — для бесплатных моделей нужен вход:');
-      lines.push('runuser -u pult -- env HOME=/var/lib/telegram-pult opencode auth login');
+      lines.push('pult-opencode auth login');
     }
     lines.push('', `Всего моделей: ${models.length}`);
   } else {

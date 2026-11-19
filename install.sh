@@ -274,12 +274,12 @@ check_opencode() {
       log "  модель $model в списке есть"
     else
       warn "  модели $model нет в списке opencode models"
-      warn "  для бесплатных моделей нужен вход: runuser -u $PULT_USER -- env HOME=$DATA_DIR opencode auth login"
+      warn "  для бесплатных моделей нужен вход: pult-opencode auth login"
     fi
   else
     warn "opencode models не отработал"
     warn "если нужны бесплатные модели (в том числе big-pickle), войдите:"
-    warn "  runuser -u $PULT_USER -- env HOME=$DATA_DIR opencode auth login"
+    warn "  pult-opencode auth login"
   fi
 }
 
@@ -323,6 +323,19 @@ SyslogIdentifier=${SERVICE_NAME}
 WantedBy=multi-user.target
 EOF
   chmod 644 "$SERVICE_FILE"
+}
+
+install_helper() {
+  # Обёртка: запускает OpenCode от пользователя pult в его домашней папке.
+  # Без неё `runuser ... opencode` из /root падает с EACCES: OpenCode читает cwd,
+  # а доступ к /root есть только у root.
+  cat > /usr/local/bin/pult-opencode <<EOF
+#!/bin/sh
+set -e
+cd "${DATA_DIR}"
+exec runuser -u "${PULT_USER}" -- env HOME="${DATA_DIR}" PATH=/usr/local/bin:/usr/bin:/bin:"${PATH}" opencode "\$@"
+EOF
+  chmod 755 /usr/local/bin/pult-opencode
 }
 
 start_service() {
@@ -381,6 +394,7 @@ chmod +x "$APP_DIR/install.sh" "$APP_DIR/deploy.sh" 2>/dev/null || true
 
 verify_bot
 check_opencode
+install_helper
 write_unit
 start_service
 
@@ -412,5 +426,5 @@ cat <<'DONE'
   2. Впишите этот id в ALLOWED_CHAT_IDS (файл .env) и выполните: systemctl restart telegram-pult
   3. Команды в чате: /new <имя>, /new <git-url>, /sessions, /status, /stop, /model
   4. Если OpenCode не отвечает или модель недоступна:
-       runuser -u pult -- env HOME=/var/lib/telegram-pult opencode auth login
+       pult-opencode auth login
 DONE
