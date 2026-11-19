@@ -4,6 +4,8 @@
 
 Репозиторий: `github.com/aleksagdrsergeevic-spec/telegram-pult-bot` (публичный).
 
+Шпаргалка команд для установки на новый сервер: [SETUP.md](SETUP.md).
+
 - Long polling (`getUpdates`, timeout 25) — вебхук не нужен, порты наружу не открываются.
 - Белый список по chat id: чужим бот отвечает отказом.
 - Модель по умолчанию — `opencode/big-pickle` (Big Pickle, бесплатная в OpenCode Zen), меняется переменной `MODEL`.
