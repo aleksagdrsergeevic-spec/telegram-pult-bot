@@ -24,6 +24,7 @@ usage() {
   --token <токен>       токен от @BotFather, запишется в .env
   --allowed <id,id>     ALLOWED_CHAT_IDS, кому разрешено управлять ботом
   --model <модель>      модель OpenCode, по умолчанию opencode/big-pickle
+  --web-url <https://…> публичный адрес MiniApp (ставит кнопку в меню бота)
   --help                эта справка
 
 Без опций install.sh ничего не перезаписывает: если .env уже есть,
@@ -45,6 +46,10 @@ while [ $# -gt 0 ]; do
       if [ $# -ge 2 ] && [ "${2#-}" = "$2" ]; then MODEL="$2"; shift 2; else die "--model требует значение"; fi
       ;;
     --model=*) MODEL="${1#*=}"; shift ;;
+    --web-url)
+      if [ $# -ge 2 ] && [ "${2#-}" = "$2" ]; then WEB_PUBLIC_URL="$2"; shift 2; else die "--web-url требует значение"; fi
+      ;;
+    --web-url=*) WEB_PUBLIC_URL="${1#*=}"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage; die "неизвестный аргумент: $1" ;;
   esac
@@ -254,6 +259,9 @@ setup_env() {
   fi
   if [ -n "${MODEL:-}" ]; then
     set_env_value "$env_file" MODEL "$MODEL"
+  fi
+  if [ -n "${WEB_PUBLIC_URL:-}" ]; then
+    set_env_value "$env_file" WEB_PUBLIC_URL "${WEB_PUBLIC_URL%/}"
   fi
 
   chown "$PULT_USER:$PULT_USER" "$env_file"
