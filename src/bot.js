@@ -9,6 +9,7 @@ import { createLogger } from './logger.js';
 import { Telegram, TelegramError } from './telegram.js';
 import { SessionStore } from './sessions.js';
 import { OpenCode, stripAnsi } from './opencode.js';
+import { startWebServer } from './web.js';
 
 const MAX_MESSAGE = 4000;
 const MAX_QUEUE = 5;
@@ -20,6 +21,7 @@ let store;
 let oc;
 let botUsername = null;
 let stopping = false;
+let webServer = null;
 const startedAt = Date.now();
 
 /** Очередь задач: chatId -> хвост цепочки */
@@ -365,6 +367,7 @@ async function runTask(chatId, prompt) {
       prompt,
       sessionId,
       resume,
+      model: session.model || cfg.model,
       timeoutMs: cfg.taskTimeoutMs,
       onChunk,
     });
@@ -580,7 +583,7 @@ async function handleStatus(chatId) {
   const lines = [
     `🧭 Сессия: ${current ? current.name : '— не выбрана'}`,
     current ? `📁 Путь: ${current.path}` : '',
-    `🤖 Модель: ${cfg.model}`,
+    `🤖 Модель: ${(current && current.model) || cfg.model}`,
     `⚙️ OpenCode: ${oc.version || '?'} (session=${oc.caps.session ? 'да' : 'нет'}, continue=${oc.caps.continue ? 'да' : 'нет'})`,
     task
       ? `⏳ Задача: идёт ${formatDuration(Date.now() - task.startedAt)} (${task.name})`
@@ -793,6 +796,9 @@ function shutdown(signal) {
       /* ignore */
     }
   }
+  if (webServer) {
+    void webServer.close().catch(() => {});
+  }
   setTimeout(() => process.exit(0), 1500).unref?.();
 }
 
@@ -909,6 +915,23 @@ async function main() {
 
   const current = store.ensureDefault('main');
   log.info(`рабочая папка: ${current ? current.path : '—'}; модель: ${cfg.model}`);
+
+  if (cfg.webEnabled) {
+    try {
+      webServer = await startWebServer({
+        cfg,
+        log,
+        store,
+        oc,
+        tg,
+        activeTasks,
+        withWorkspaceLock,
+        botUsername,
+      });
+    } catch (err) {
+      log.error(`MiniApp не запустился: ${err.message}`);
+    }
+  }
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));

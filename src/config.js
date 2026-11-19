@@ -124,6 +124,10 @@ export function loadConfig(envFile = path.resolve(process.cwd(), '.env')) {
       name: 'STREAM_WINDOW',
     }),
     streaming: pick(fileEnv, 'STREAMING', '0') === '1',
+    webEnabled: pick(fileEnv, 'WEB_ENABLED', '1') !== '0',
+    webHost: pick(fileEnv, 'WEB_HOST', '127.0.0.1'),
+    webPort: toInt(pick(fileEnv, 'WEB_PORT', '8787'), 8787, { min: 1024, max: 65535, name: 'WEB_PORT' }),
+    webPublicUrl: pick(fileEnv, 'WEB_PUBLIC_URL', '').replace(/\/+$/, ''),
     pollTimeout: toInt(pick(fileEnv, 'POLL_TIMEOUT', '25'), 25, { min: 5, max: 50, name: 'POLL_TIMEOUT' }),
     cloneTimeoutMs: toInt(pick(fileEnv, 'GIT_CLONE_TIMEOUT_MS', '180000'), 180000, {
       min: 10000,

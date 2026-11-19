@@ -119,9 +119,9 @@ export class OpenCode {
     };
   }
 
-  buildArgs({ prompt, sessionId, resume }) {
+  buildArgs({ prompt, sessionId, resume, model }) {
     const args = ['run'];
-    if (this.caps.model) args.push('--model', this.model);
+    if (this.caps.model) args.push('--model', model || this.model);
     if (this.caps.auto) args.push('--auto');
 
     if (this.caps.session && sessionId) {
@@ -138,9 +138,9 @@ export class OpenCode {
   /**
    * Запуск задачи. Возвращает handle { pid, kill(reason), promise }.
    */
-  start({ cwd, prompt, sessionId = null, resume = false, timeoutMs = 1200000, onChunk = null }) {
-    const args = this.buildArgs({ prompt, sessionId, resume });
-    this.log.info(`opencode run в ${cwd} (sessionId=${sessionId || '—'}, resume=${resume})`);
+  start({ cwd, prompt, sessionId = null, resume = false, model = null, timeoutMs = 1200000, onChunk = null }) {
+    const args = this.buildArgs({ prompt, sessionId, resume, model });
+    this.log.info(`opencode run в ${cwd} (sessionId=${sessionId || '—'}, model=${model || this.model}, resume=${resume})`);
 
     let child;
     try {

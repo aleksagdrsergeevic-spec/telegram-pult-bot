@@ -76,6 +76,7 @@ export class SessionStore {
             path: this.workspacePath(safeName),
             openCodeSessionId: item.openCodeSessionId || null,
             hasRun: item.hasRun === true,
+            model: typeof item.model === 'string' && item.model ? item.model : null,
             source: item.source || 'local',
             createdAt: item.createdAt || new Date().toISOString(),
             lastUsedAt: item.lastUsedAt || new Date().toISOString(),
@@ -267,6 +268,14 @@ export class SessionStore {
     if (!item) return;
     item.openCodeSessionId = sessionId || null;
     this.save();
+  }
+
+  setModel(name, model) {
+    const item = this.get(name);
+    if (!item) return null;
+    item.model = model || null;
+    this.save();
+    return item;
   }
 
   markRun(name) {

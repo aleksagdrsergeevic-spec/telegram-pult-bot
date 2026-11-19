@@ -166,6 +166,49 @@ journalctl -u telegram-pult -n 50 --no-pager
 
 В Telegram: `/start` → `/new my-project` → пишете задачу.
 
+## MiniApp: чат с OpenCode внутри Telegram
+
+Кроме бота есть MiniApp — веб-чат, который открывается кнопкой в меню бота: живой поток ответа, выбор папки-сессии, выбор модели, кнопка «стоп».
+
+Как устроено:
+
+- Тот же процесс бота поднимает HTTP-сервер (`WEB_HOST`/`WEB_PORT`, по умолчанию `127.0.0.1:8787`) и отдаёт `web/index.html`.
+- Авторизация — по `Telegram.WebApp.initData` с проверкой подписи HMAC-SHA256 токеном бота, плюс сверка с `ALLOWED_CHAT_IDS`. Чужой не зайдёт даже зная адрес.
+- Поток ответа идёт через SSE (`/api/stream`), задачи выполняются тем же `opencode run` через общую очередь и блокировку рабочей папки, что и в боте.
+- Список папок (`/api/session`), модели (`/api/models`, `/api/model`), стоп (`/api/stop`).
+
+Telegram открывает MiniApp только по **https**. Наружу порт бота светить не нужно — поставьте перед ним HTTPS-прокси.
+
+**Вариант с доменом (Caddy):**
+
+```bash
+apt-get install -y caddy
+cat > /etc/caddy/Caddyfile <<'EOF'
+pult.example.com {
+    reverse_proxy 127.0.0.1:8787
+}
+EOF
+systemctl restart caddy
+```
+
+**Вариант без домена (Cloudflare Tunnel):**
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:8787
+```
+
+Возьмите выданный `https://…trycloudflare.com` адрес, впишите его в `.env` и перезапустите сервис:
+
+```ini
+WEB_PUBLIC_URL=https://pult.example.com
+```
+
+```bash
+systemctl restart telegram-pult
+```
+
+Если `WEB_PUBLIC_URL` задан, бот сам ставит кнопку «Пульт» в меню (Telegram `setChatMenuButton`) — в логе будет «кнопка MiniApp установлена в меню бота». Открывать: меню бота → «Пульт», либо ссылкой `t.me/<бот>?startapp`.
+
 ## Команды в Telegram
 
 | Команда | Что делает |
