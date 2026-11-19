@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { stripAnsi, isModelAccessDisabled } from './opencode.js';
+import { cleanAgentOutput } from './text.js';
 import { contextLimit, estimateTokens } from './models.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -284,7 +285,7 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
       if (res.sessionId) store.setOpenCodeSession(session.name, res.sessionId);
       if (!res.missing) store.markRun(session.name);
 
-      const outText = stripAnsi(res.output || '').trim();
+      const outText = cleanAgentOutput(res.output || '');
       const promptTokens = estimateTokens(text);
       const outputTokens = estimateTokens(outText);
       store.addTokens(session.name, promptTokens, outputTokens);

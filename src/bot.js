@@ -9,6 +9,7 @@ import { createLogger } from './logger.js';
 import { Telegram, TelegramError } from './telegram.js';
 import { SessionStore } from './sessions.js';
 import { OpenCode, stripAnsi, isModelAccessDisabled } from './opencode.js';
+import { cleanAgentOutput } from './text.js';
 import { estimateTokens } from './models.js';
 import { startWebServer } from './web.js';
 import { HistoryStore } from './history.js';
@@ -231,27 +232,6 @@ function startTyping(chatId) {
 /* ------------------------------------------------------------------ */
 /* Итоговый ответ                                                      */
 /* ------------------------------------------------------------------ */
-
-/**
- * Убирает из вывода OpenCode служебные строки-«рамки» (маркеры шагов и
- * box-drawing), оставляя текст ответа и содержимое блоков кода.
- */
-function cleanAgentOutput(text) {
-  const kept = [];
-  let inFence = false;
-  for (const line of stripAnsi(text).split('\n')) {
-    if (/^\s*(```|~~~)/.test(line)) {
-      inFence = !inFence;
-      kept.push(line);
-      continue;
-    }
-    if (!inFence && /^\s*[⬡⎿┃│└├╭╮╰╯─]/.test(line)) continue;
-    // служебная шапка вида «> build · big-pickle»
-    if (!inFence && /^>\s*[\w.-]+\s*·\s*\S+\s*$/.test(line)) continue;
-    kept.push(line);
-  }
-  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-}
 
 function buildFinalText({ res, sessionName, elapsed }) {
   const body = stripAnsi(res.output || '').trim();
@@ -480,7 +460,7 @@ async function runTask(chatId, prompt) {
   }
 
   const elapsed = formatDuration(Date.now() - started);
-  const finalRes = cfg.streaming ? res : { ...res, output: cleanAgentOutput(res.output || '') };
+  const finalRes = { ...res, output: cleanAgentOutput(res.output || '') };
   log.info(
     `задача в «${session.name}»: код ${res.code}, ${elapsed}, вывода ${(finalRes.output || '').length} симв.` +
       `${res.stopped ? ', остановлено' : ''}${res.timedOut ? ', таймаут' : ''}${res.idle ? ', тишина' : ''}`,
