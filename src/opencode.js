@@ -153,7 +153,11 @@ export class OpenCode {
     onChunk = null,
   }) {
     const args = this.buildArgs({ prompt, sessionId, resume, model });
-    this.log.info(`opencode run в ${cwd} (sessionId=${sessionId || '—'}, model=${model || this.model}, resume=${resume})`);
+    const startedAt = Date.now();
+    this.log.info(
+      `opencode run в ${cwd} (sessionId=${sessionId || '—'}, model=${model || this.model}, resume=${resume}, ` +
+        `auto=${this.caps.auto ? 'да' : 'нет'}, standalone=${this.caps.standalone ? 'да' : 'нет'}, prompt=${prompt.length} симв.)`,
+    );
 
     let child;
     try {
@@ -202,6 +206,11 @@ export class OpenCode {
       clearTimeout(forceDeadline);
       if (idleTimer) clearInterval(idleTimer);
       const match = /ses_[A-Za-z0-9]{8,}/.exec(output);
+      this.log.info(
+        `opencode: завершено за ${Math.round((Date.now() - startedAt) / 1000)} с, код ${payload.code}, ` +
+          `вывода ${output.length} симв.${payload.stopped ? ', остановлено' : ''}${payload.timedOut ? ', таймаут' : ''}` +
+          `${payload.idle ? ', тишина' : ''}${payload.hang ? ', без закрытия потоков' : ''}`,
+      );
       resolveFn({
         sessionId: match ? match[0] : null,
         output,
@@ -211,9 +220,15 @@ export class OpenCode {
       });
     };
 
+    let firstOutput = true;
+
     const collect = (chunk, isError) => {
       const text = stripAnsi(chunk.toString());
       if (!text) return;
+      if (firstOutput) {
+        firstOutput = false;
+        this.log.info(`opencode: первый вывод через ${Math.round((Date.now() - startedAt) / 1000)} с`);
+      }
       lastOutputAt = Date.now();
       output = `${output}${text}`;
       if (output.length > 400000) output = output.slice(-400000);

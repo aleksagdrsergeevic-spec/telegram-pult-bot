@@ -381,7 +381,8 @@ install_helper() {
   cat > /usr/local/bin/pult-opencode <<EOF
 #!/bin/sh
 set -e
-cd "${DATA_DIR}"
+# PULT_OC_CWD позволяет запускать opencode в конкретной папке (для проверок)
+cd "\${PULT_OC_CWD:-${DATA_DIR}}"
 exec runuser -u "${PULT_USER}" -- env HOME="${DATA_DIR}" PATH=/usr/local/bin:/usr/bin:/bin:"${PATH}" opencode "\$@"
 EOF
   chmod 755 /usr/local/bin/pult-opencode

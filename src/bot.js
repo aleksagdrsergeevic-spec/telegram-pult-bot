@@ -419,10 +419,13 @@ async function runTask(chatId, prompt) {
       res.code !== 0 &&
       !res.stopped &&
       !res.timedOut &&
-      session.openCodeSessionId &&
-      /session/i.test(`${res.stderr || ''}${res.output || ''}`)
+      !res.idle &&
+      (session.openCodeSessionId || session.hasRun) &&
+      /session|continue/i.test(`${res.stderr || ''}${res.output || ''}`)
     ) {
-      log.warn(`сессия OpenCode ${session.openCodeSessionId} не найдена, стартую заново`);
+      log.warn(
+        `возобновление сессии не удалось (sessionId=${session.openCodeSessionId || '—'}), стартую задачу с чистого листа`,
+      );
       store.setOpenCodeSession(session.name, null);
       outputBuffer = '';
       if (streamer) streamer.reset();
@@ -433,7 +436,7 @@ async function runTask(chatId, prompt) {
 
     if (res && !res.missing) {
       if (res.sessionId) store.setOpenCodeSession(session.name, res.sessionId);
-      store.markRun(session.name);
+      if (res.code === 0) store.markRun(session.name);
     }
   } catch (err) {
     log.error('ошибка выполнения', err);
@@ -454,6 +457,11 @@ async function runTask(chatId, prompt) {
 
   const elapsed = formatDuration(Date.now() - started);
   const finalRes = cfg.streaming ? res : { ...res, output: cleanAgentOutput(res.output || '') };
+  log.info(
+    `задача в «${session.name}»: код ${res.code}, ${elapsed}, вывода ${(finalRes.output || '').length} симв.` +
+      `${res.stopped ? ', остановлено' : ''}${res.timedOut ? ', таймаут' : ''}${res.idle ? ', тишина' : ''}`,
+  );
+  if (res.stderr && res.code !== 0) log.warn(`stderr opencode: ${stripAnsi(res.stderr).slice(-500)}`);
   const text = buildFinalText({ res: finalRes, sessionName: session.name, elapsed });
   history.append(session.name, 'assistant', stripAnsi(finalRes.output || text || '').trim() || text);
   await deliverFinal(chatId, placeholderId, text).catch((err) => {
