@@ -178,14 +178,10 @@ JSON
     cat > "$file" <<'JSON'
 {
   "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "edit": "allow",
-    "bash": "allow",
-    "webfetch": "allow"
-  }
+  "permission": "allow"
 }
 JSON
-    log "права OpenCode: полный доступ без подтверждений (v1 permission)"
+    log "права OpenCode: полный доступ без подтверждений (v1 permission: allow)"
   fi
 
   chown -R "$PULT_USER:$PULT_USER" "$dir"

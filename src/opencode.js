@@ -21,7 +21,7 @@ export class OpenCode {
       FORCE_COLOR: '0',
       TERM: 'dumb',
     };
-    this.caps = { model: true, session: false, continue: true };
+    this.caps = { model: true, session: false, continue: true, auto: false };
     this.version = null;
     this.helpText = null;
   }
@@ -91,6 +91,8 @@ export class OpenCode {
         model: /--model\b/.test(this.helpText),
         session: /--session\b/.test(this.helpText),
         continue: /--continue\b/.test(this.helpText),
+        // --auto одобряет все запросы разрешений, которые не запрещены явно
+        auto: /--auto\b/.test(this.helpText),
       };
       // Если справка распозналась — доверяем ей; иначе оставляем разумный дефолт.
       if (caps.model || caps.session || caps.continue) {
@@ -102,7 +104,7 @@ export class OpenCode {
     this.log.info(
       `OpenCode ${this.version || '?'}: флаги run — model=${this.caps.model ? 'да' : 'нет'}, session=${
         this.caps.session ? 'да' : 'нет'
-      }, continue=${this.caps.continue ? 'да' : 'нет'}`,
+      }, continue=${this.caps.continue ? 'да' : 'нет'}, auto=${this.caps.auto ? 'да' : 'нет'}`,
     );
     return this.caps;
   }
@@ -120,6 +122,7 @@ export class OpenCode {
   buildArgs({ prompt, sessionId, resume }) {
     const args = ['run'];
     if (this.caps.model) args.push('--model', this.model);
+    if (this.caps.auto) args.push('--auto');
 
     if (this.caps.session && sessionId) {
       args.push('--session', sessionId);

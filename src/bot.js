@@ -221,6 +221,8 @@ function cleanAgentOutput(text) {
       continue;
     }
     if (!inFence && /^\s*[⬡⎿┃│└├╭╮╰╯─]/.test(line)) continue;
+    // служебная шапка вида «> build · big-pickle»
+    if (!inFence && /^>\s*[\w.-]+\s*·\s*\S+\s*$/.test(line)) continue;
     kept.push(line);
   }
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -798,12 +800,44 @@ function shutdown(signal) {
  * Конфиг OpenCode с полным доступом: агент не останавливается на запросах
  * подтверждений (shell, правки файлов, webfetch). Формат зависит от версии CLI.
  */
+function isPermissiveConfig(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed.permission === 'allow') return true;
+    const p = parsed.permission;
+    if (p && typeof p === 'object' && p['*'] === 'allow' && p.external_directory === 'allow') return true;
+    if (Array.isArray(parsed.permissions) && parsed.permissions.some((r) => r && r.action === '*' && r.effect === 'allow')) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 function ensureOpenCodePermissions() {
   const dir = path.join(os.homedir(), '.config', 'opencode');
   const file = path.join(dir, 'opencode.json');
+
   if (fs.existsSync(file)) {
-    log.info(`конфиг OpenCode уже есть: ${file}`);
-    return;
+    let raw = '';
+    try {
+      raw = fs.readFileSync(file, 'utf8');
+    } catch (err) {
+      log.warn(`не смог прочитать ${file}: ${err.message}`);
+    }
+    if (raw && isPermissiveConfig(raw)) {
+      log.info(`права OpenCode: полный доступ уже настроен (${file})`);
+      return;
+    }
+    if (raw) {
+      try {
+        fs.copyFileSync(file, `${file}.bak`);
+        log.warn(`конфиг OpenCode был без полного доступа — сохранил копию в ${file}.bak и перезаписываю`);
+      } catch (err) {
+        log.warn(`не смог сохранить копию конфига: ${err.message}`);
+      }
+    }
   }
 
   const match = /(\d+)\.(\d+)/.exec(String(oc.version || ''));
@@ -819,7 +853,9 @@ function ensureOpenCodePermissions() {
         }
       : {
           $schema: 'https://opencode.ai/config.json',
-          permission: { edit: 'allow', bash: 'allow', webfetch: 'allow' },
+          // v1: одна строка включает allow вообще для всех действий,
+          // включая external_directory и doom_loop.
+          permission: 'allow',
         };
 
   try {
