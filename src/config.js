@@ -99,6 +99,7 @@ export function loadConfig(envFile = path.resolve(process.cwd(), '.env')) {
     token,
     allowedChatIds,
     model: pick(fileEnv, 'MODEL', 'opencode/big-pickle'),
+    imageModel: pick(fileEnv, 'IMAGE_MODEL', ''),
     workspacesDir,
     sessionsFile,
     historyFile,

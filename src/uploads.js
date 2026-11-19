@@ -35,5 +35,13 @@ export function saveImage({ dir, buffer, mime, nameHint }) {
 export function imagePromptPrefix(paths) {
   const list = (paths || []).filter(Boolean);
   if (!list.length) return '';
-  return `Приложены изображения — открой их через read и учти содержимое:\n${list.map((p) => `- ${p}`).join('\n')}\n\n`;
+  return [
+    'К сообщению приложены изображения — открой их через read.',
+    'Важно: если содержимое изображения не читается (модель без поддержки картинок),',
+    'не вызывай субагентов и не пытайся обойти это — просто скажи одной строкой,',
+    'что нужна vision-модель, и выполни текстовую часть задачи.',
+    ...list.map((p) => `- ${p}`),
+    '',
+    '',
+  ].join('\n');
 }

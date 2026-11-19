@@ -116,7 +116,7 @@ async function withWorkspaceLock(key, fn, owner = '') {
 /* Очередь на чат                                                      */
 /* ------------------------------------------------------------------ */
 
-function enqueueTask(chatId, prompt) {
+function enqueueTask(chatId, prompt, options = {}) {
   const key = String(chatId);
   const depth = (queueDepth.get(key) || 0) + 1;
   if (depth > MAX_QUEUE) {
@@ -131,7 +131,7 @@ function enqueueTask(chatId, prompt) {
   }
 
   const prev = queues.get(key) || Promise.resolve();
-  const run = prev.then(() => runTask(chatId, prompt)).catch((err) => {
+  const run = prev.then(() => runTask(chatId, prompt, options)).catch((err) => {
     log.error('задача упала', err);
   });
 
@@ -326,7 +326,7 @@ async function deliverFinal(chatId, messageId, text) {
 /* Выполнение задачи                                                   */
 /* ------------------------------------------------------------------ */
 
-async function runTask(chatId, prompt) {
+async function runTask(chatId, prompt, options = {}) {
   const key = String(chatId);
   let session = store.getCurrent();
 
@@ -403,7 +403,7 @@ async function runTask(chatId, prompt) {
       prompt,
       sessionId,
       resume,
-      model: session.model || cfg.model,
+      model: (options.images && cfg.imageModel) || session.model || cfg.model,
       timeoutMs: cfg.taskTimeoutMs,
       idleTimeoutMs: cfg.idleTimeoutMs,
       onChunk,
@@ -805,7 +805,7 @@ async function handleMessage(msg) {
     text = caption || 'Опиши, что на изображении. Если на нём есть задача — выполни её.';
   }
 
-  enqueueTask(chatId, prefix + text);
+  enqueueTask(chatId, prefix + text, { images: Boolean(attachment) });
 }
 
 function handleUpdate(update) {

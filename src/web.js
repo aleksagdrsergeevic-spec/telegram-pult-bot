@@ -109,10 +109,10 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
     const list = queues.get(userId);
     if (!list || !list.length) return;
     if (activeUsers.has(userId)) return;
-    const text = list.shift();
+    const item = list.shift();
     if (!list.length) queues.delete(userId);
     activeUsers.add(userId);
-    void runPrompt(userId, text).finally(() => {
+    void runPrompt(userId, item.text, !!item.images).finally(() => {
       activeUsers.delete(userId);
       drainQueue(userId);
     });
@@ -173,7 +173,7 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
     };
   }
 
-  async function runPrompt(userId, text) {
+  async function runPrompt(userId, text, hasImages = false) {
     const key = String(userId);
     const session = store.getCurrent();
 
@@ -194,7 +194,7 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
       return;
     }
 
-    const model = session.model || cfg.model;
+    const model = (hasImages && cfg.imageModel) || session.model || cfg.model;
     const started = Date.now();
     broadcast(userId, { type: 'start', session: session.name, model });
     if (history) history.append(session.name, 'user', text);
@@ -427,7 +427,7 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
           sendJson(res, 429, { error: `очередь переполнена (${10})` });
           return;
         }
-        list.push(text);
+        list.push({ text, images: saved.length > 0 });
         queues.set(session.userId, list);
         broadcast(session.userId, { type: 'notice', message: `добавлено в очередь: ${list.length}` });
         sendJson(res, 202, { queued: true, position: list.length, files: saved.length });
@@ -436,7 +436,7 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
 
       sendJson(res, 202, { accepted: true, files: saved.length });
       activeUsers.add(session.userId);
-      void runPrompt(session.userId, text).finally(() => {
+      void runPrompt(session.userId, text, saved.length > 0).finally(() => {
         activeUsers.delete(session.userId);
         drainQueue(session.userId);
       });
