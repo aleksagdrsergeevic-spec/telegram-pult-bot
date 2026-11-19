@@ -2,7 +2,7 @@
 
 Бот для Telegram, который живёт на VPS и кодит за вас: пишете задачу с iPhone в Telegram, а OpenCode выполняет её на сервере в нужной папке.
 
-Репозиторий: `github.com/aleksagdrsergeevic-spec/telegram-pult` (приватный).
+Репозиторий: `github.com/aleksagdrsergeevic-spec/telegram-pult-bot` (публичный).
 
 - Long polling (`getUpdates`, timeout 25) — вебхук не нужен, порты наружу не открываются.
 - Белый список по chat id: чужим бот отвечает отказом.
@@ -41,34 +41,20 @@
 apt-get update && apt-get install -y git curl
 ```
 
-**3. Сделать ключ для GitHub** — репозиторий приватный, серверу нужен доступ:
+**3. Склонировать проект** (репозиторий публичный, ни ключей, ни паролей не нужно):
 
 ```bash
-ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
-cat ~/.ssh/id_ed25519.pub
+git clone https://github.com/aleksagdrsergeevic-spec/telegram-pult-bot.git
+cd telegram-pult-bot
 ```
 
-Скопируйте целиком вторую строку вывода — она начинается с `ssh-ed25519 AAAA...`.
-
-**4. Добавить ключ в GitHub.** В Safari: github.com → аватар → Settings → SSH and GPG keys → New SSH key → Title `vps`, Key — вставьте скопированное → Add SSH key.
-
-**5. Проверить доступ и склонировать проект:**
-
-```bash
-ssh -T git@github.com
-git clone git@github.com:aleksagdrsergeevic-spec/telegram-pult.git
-cd telegram-pult
-```
-
-На `ssh -T` ожидается `Hi aleksagdrsergeevic-spec! You've successfully authenticated...` (на вопрос про fingerprint отвечайте `yes`).
-
-**6. Запустить установку** (2–5 минут, в конце должна быть строка «токен рабочий, бот: @…»):
+**4. Запустить установку** (2–5 минут, в конце должна быть строка «токен рабочий, бот: @…»):
 
 ```bash
 sudo bash install.sh --token=ВАШ_ТОКЕН --allowed=ВАШ_CHAT_ID
 ```
 
-**7. Войти в OpenCode** — без этого не будет бесплатных моделей:
+**5. Войти в OpenCode** — без этого не будет бесплатных моделей:
 
 ```bash
 runuser -u pult -- env HOME=/var/lib/telegram-pult opencode auth login
@@ -82,7 +68,7 @@ runuser -u pult -- env HOME=/var/lib/telegram-pult opencode models | grep big-pi
 
 Должно вывести `opencode/big-pickle`.
 
-**8. Проверить сервис:**
+**6. Проверить сервис:**
 
 ```bash
 systemctl status telegram-pult
@@ -90,14 +76,13 @@ systemctl status telegram-pult
 
 Нужно `active (running)`. Логи: `journalctl -u telegram-pult -n 50 --no-pager`.
 
-**9. Telegram:** боту `/start`, затем `/new my-project` — и пишите задачу обычным текстом.
+**7. Telegram:** боту `/start`, затем `/new my-project` — и пишите задачу обычным текстом.
 
 Если на каком-то шаге ошибка:
 
-- `Permission denied (publickey)` при clone — ключ не добавлен в GitHub или добавлен не тот, что в `~/.ssh/id_ed25519.pub`.
 - `не задан TELEGRAM_BOT_TOKEN` — токен не попал в `/opt/telegram-pult/.env`; впишите и `systemctl restart telegram-pult`.
 - `opencode: command not found` — `npm i -g opencode-ai@latest`, затем `systemctl restart telegram-pult`.
-- В `/model` нет моделей `opencode/*` — не выполнен шаг 7 (`opencode auth login`).
+- В `/model` нет моделей `opencode/*` — не выполнен шаг 5 (`opencode auth login`).
 
 **Способ А. С компьютера или из веб-консоли хостера** (репозиторий уже на машине):
 
