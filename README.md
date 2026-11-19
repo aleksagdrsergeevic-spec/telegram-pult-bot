@@ -1,0 +1,202 @@
+# Telegram-пульт для OpenCode
+
+Бот для Telegram, который живёт на VPS и кодит за вас: пишете задачу с iPhone в Telegram, а OpenCode выполняет её на сервере в нужной папке.
+
+- Long polling (`getUpdates`, timeout 25) — вебхук не нужен, порты наружу не открываются.
+- Белый список по chat id: чужим бот отвечает отказом.
+- Модель по умолчанию — `opencode/big-pickle` (Big Pickle, бесплатная в OpenCode Zen), меняется переменной `MODEL`.
+- Сессия = рабочая папка внутри `WORKSPACES_DIR` + своя сессия OpenCode (`--continue` / `--session <id>`).
+- Ответ агента стримится в одно сообщение с редактированием не чаще раза в 1.2 с.
+- Задача ограничена 20 минутами, `/stop` убивает процесс вместе с дочерними.
+- Работа от отдельного пользователя `pult`, systemd с автоперезапуском, логи в файл с ротацией по размеру.
+
+## Что нужно
+
+1. VPS с Ubuntu/Debian (CentOS/Rocky тоже подойдут) и root-доступом.
+2. Токен бота от [@BotFather](https://t.me/BotFather).
+3. Ваш chat id — бот покажет его в ответ на любое сообщение.
+
+## Шаг 1. Создать бота
+
+1. Откройте @BotFather → `/newbot` → имя и username.
+2. Скопируйте токен вида `123456789:AAH...`.
+
+## Шаг 2. Развернуть на VPS
+
+Руками OpenCode ставить не нужно: `install.sh` сам проверяет Node 20+, `opencode --version` и, если чего-то нет, устанавливает. Уже установленное не переустанавливается.
+
+Всё делает один идемпотентный скрипт: ставит Node 20+ (если нет), ставит `opencode` (если нет), создаёт пользователя `pult`, раскладывает файлы, создаёт `.env`, регистрирует и запускает systemd-сервис.
+
+### Быстрый старт с телефона (только браузер)
+
+1. В панели хостера возьмите IP сервера, root-пароль и откройте веб-консоль (VNC / Console / Web SSH).
+2. В консоли сервера: `apt-get update && apt-get install -y git curl` (для минимальных образов).
+3. Склонируйте проект и запустите установку с токеном и chat id одной строкой:
+   `git clone <адрес-репозитория> telegram-pult && cd telegram-pult && sudo bash install.sh --token=ВАШ_ТОКЕН --allowed=ВАШ_CHAT_ID`
+4. Войдите в OpenCode для бесплатных моделей: `runuser -u pult -- env HOME=/var/lib/telegram-pult opencode auth login` (в консоли появится ссылка — откройте её в Safari на телефоне).
+5. Напишите боту `/start`, затем `/new my-project` — и задачи.
+
+**Способ А. С компьютера или из веб-консоли хостера** (репозиторий уже на машине):
+
+```bash
+chmod +x install.sh
+sudo bash install.sh
+```
+
+Всё встанет в `/opt/telegram-pult`, данные — в `/var/lib/telegram-pult`.
+
+**Способ Б. С любого места — deploy.sh сам подключается к VPS по SSH** (это и есть «автоматически подключается к моему VPS»):
+
+```bash
+# один раз: создать ключ и показать публичную часть
+./deploy.sh --bootstrap-key
+# добавить показанный ключ на сервер (панель хостера → SSH keys, либо ~/.ssh/authorized_keys)
+
+# дальше — одной командой
+./deploy.sh --host 203.0.113.10 --user root --token
+```
+
+`--token` без значения спросит токен скрытым вводом и передаст его на сервер в `.env`. Пароль вместо ключа: `--password` (нужен `sshpass`).
+
+Токен бота, ваш chat id и модель можно один раз положить в файл `.env` в корне проекта (он в `.gitignore`, на сервер не копируется) — тогда `deploy.sh` возьмёт их сам и хватит одной команды `./deploy.sh --host <ip>`. Аргументы `--token`, `--allowed`, `--model` всегда важнее файла. Там же можно держать `VPS_HOST`, `VPS_USER`, `VPS_PORT` и `VPS_KEY`, чтобы команда была совсем короткой: `./deploy.sh`.
+
+Полезное:
+
+```bash
+./deploy.sh --host <ip> --status     # состояние сервиса
+./deploy.sh --host <ip> --logs       # журнал
+./deploy.sh --host <ip> --restart    # перезапуск
+./deploy.sh --host <ip> --check      # node/opencode/git/сервис/модель
+./deploy.sh --host <ip> --wait 300   # сначала дождаться, что VPS поднялся, потом деплой
+```
+
+Повторный деплой — обычное обновление: файлы перезаливаются, `.env` не перезаписывается.
+
+**Способ В. Автодеплой из GitHub.** В репозитории лежит `.github/workflows/deploy.yml`: каждый push в `main` сам заходит на VPS по SSH и прогоняет `install.sh`.
+
+Добавьте в GitHub → Settings → Secrets and variables → Actions:
+
+- `VPS_HOST` — IP или домен
+- `VPS_USER` — обычно `root`
+- `VPS_SSH_KEY` — приватный ключ (содержимое `~/.ssh/telegram-pult_ed25519`)
+- `VPS_PORT` — по желанию, по умолчанию 22
+- `TELEGRAM_BOT_TOKEN` — по желанию, попадёт в `.env` первого деплоя
+- `ALLOWED_CHAT_IDS` — по желанию
+
+## Шаг 3. Настроить .env
+
+Файл: `/opt/telegram-pult/.env` (права 600, владелец `pult`).
+
+```ini
+TELEGRAM_BOT_TOKEN=123456789:AAH...
+ALLOWED_CHAT_IDS=111222333
+MODEL=opencode/big-pickle
+```
+
+Если токен передан через `deploy.sh --token`, менять нужно только `ALLOWED_CHAT_IDS`:
+
+```bash
+nano /opt/telegram-pult/.env
+systemctl restart telegram-pult
+```
+
+Свой chat id узнать просто: напишите боту что угодно — он ответит «Доступ запрещён» и покажет id.
+
+## Шаг 4. Первый запуск
+
+```bash
+systemctl status telegram-pult
+journalctl -u telegram-pult -n 50 --no-pager
+```
+
+В Telegram: `/start` → `/new my-project` → пишете задачу.
+
+## Команды в Telegram
+
+| Команда | Что делает |
+| --- | --- |
+| `/sessions` | список сессий с инлайн-кнопками, переключение |
+| `/new <имя>` | новая рабочая папка |
+| `/new <git-url>` | папка + `git clone --depth 1` |
+| `/use <имя>` | переключить текущую сессию |
+| `/status` | сессия, путь, модель, идущая задача, аптайм |
+| `/stop` | убить процесс задачи |
+| `/model` | текущая модель и список доступных |
+| `/help`, `/start` | справка и chat id |
+
+Любой другой текст — задача для OpenCode в текущей папке.
+
+## Как выполняется задача
+
+```
+opencode run --model opencode/big-pickle [--continue | --session <id>] "<текст задачи>"
+```
+
+- Промпт передаётся одним аргументом через `spawn`, без `shell` — инъекции через текст невозможны.
+- `cwd` — папка сессии; путь проверяется, что он внутри `WORKSPACES_DIR`.
+- `install.sh` проверяет `opencode run --help` и пишет в лог, есть ли `--session`, `--continue`, `--model`. Если `--session` есть — бот хранит id сессии (`ses_...`) в `sessions.json`; иначе работает `--continue`.
+- Если сохранённая сессия OpenCode пропала, бот честно сообщает в лог и один раз перезапускает задачу с нуля.
+
+## Модель
+
+`opencode/big-pickle` — Big Pickle, бесплатная модель OpenCode Zen (по документации opencode.ai она бесплатна ограниченное время, и её провайдер может использовать данные для улучшения модели).
+
+Провайдер `opencode` появляется только после входа в аккаунт OpenCode:
+
+```bash
+runuser -u pult -- env HOME=/var/lib/telegram-pult opencode auth login
+```
+
+Тогда же стоит проверить список: `runuser -u pult -- env HOME=/var/lib/telegram-pult opencode models`.
+
+Если Big Pickle станет платным или исчезнет, в `.env` можно поставить другую бесплатную модель из того же каталога (например `opencode/iceman-free` или `opencode/deepseek-v4.1-flash-free`), а также любую платную с вашим ключом провайдера.
+
+## Безопасность
+
+- Бот работает не от root: systemd-юнит запускает его от пользователя `pult`.
+- Доступ только для chat id из `ALLOWED_CHAT_IDS` (пусто = отказ всем).
+- Никаких shell-строк с текстом пользователя; `git clone` и `opencode` вызываются с массивом аргументов.
+- Имена сессий валидируются (`[A-Za-z0-9._-]`, до 64 символов, без `..` и `/`), итоговый путь сверяется с `WORKSPACES_DIR`.
+- Лимит длины задачи — `PROMPT_MAX_LENGTH` (4000), таймаут задачи — `TASK_TIMEOUT_MS` (20 минут).
+- `.env` не попадает в git; токен не передаётся аргументами командной строки на сервер (он идёт через `.env.deploy`, который install.sh переносит в `.env` и удаляет).
+- Логи: `/var/lib/telegram-pult/logs/pult.log`, ротация по 5 МБ, 3 архива.
+
+## Диагностика
+
+**409 Conflict: terminated by other getUpdates request.** Бот запущен дважды. Проверьте: `systemctl status telegram-pult` и `pgrep -af src/bot.js`. Один процесс оставьте, остальные убейте. Сам бот на 409 не падает, ждёт 15 секунд и продолжает.
+
+**Сервис перезапускается в цикле.** Так задумано: `Restart=always`. Если в журнале «не задан TELEGRAM_BOT_TOKEN», бот выходит с кодом 78 и systemd его не поднимает — впишите токен в `.env` и выполните `systemctl restart telegram-pult`.
+
+**`opencode: command not found`.** `npm i -g opencode-ai@latest` (или `@opencode/cli@latest`), затем `systemctl restart telegram-pult`.
+
+**Задача висит без вывода.** Проверьте, что модель доступна: `/model`. 20 минут — жёсткий предел, дальше процесс убивается, а бот пишет таймаут.
+
+**Сервер пропал / переехал.** Запустите `./deploy.sh --host <новый ip>` — скрипт идемпотентный, всё поднимет. Если сервер перезагружается, `--wait 300` подождёт и дождётся.
+
+### Если VPS ещё нет
+
+Бота можно поставить на любую машину с systemd и интернетом: Oracle Cloud Always Free, Hetzner, Timeweb, любой VPS за пару долларов. Минимум — 1 vCPU / 1 ГБ RAM для самого пульта (OpenCode с тяжёлыми сборками любит больше). После создания сервера добавьте SSH-ключ из `./deploy.sh --bootstrap-key` в панели хостера и выполните `./deploy.sh --host <ip>`.
+
+## Структура
+
+```
+src/bot.js        — polling, whitelist, очередь на чат, команды, стриминг
+src/telegram.js   — Bot API на fetch, ретраи, 429/409
+src/sessions.js   — рабочие папки, clone, sessions.json, проверки путей
+src/opencode.js   — spawn opencode run, флаги, таймаут, kill дерева процессов
+src/config.js     — .env без зависимостей
+src/logger.js     — лог в файл с ротацией по размеру
+install.sh        — идемпотентная установка на сервере
+deploy.sh         — подключение к VPS по SSH и деплой
+```
+
+Зависимостей нет: только Node 20+ и встроенный `fetch`.
+
+## Проверки, которые делает install.sh
+
+- `node -v` ≥ 20, иначе ставит Node через NodeSource.
+- `opencode --version`; если нет — `npm i -g @opencode/cli@latest`, при неудаче `opencode-ai@latest`.
+- `opencode run --help` → в лог пишется, какие флаги доступны.
+- `opencode models` → есть ли `MODEL` в списке; если нет — подсказка про `opencode auth login`.
+- `git --version`.
+- `getMe` у Telegram → в лог пишется имя бота, а при плохом токене — предупреждение.

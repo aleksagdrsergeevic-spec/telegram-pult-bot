@@ -1,0 +1,16 @@
+{
+  "name": "telegram-pult",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Telegram-пульт для OpenCode на VPS: задачи из Telegram, работа в папках-сессиях",
+  "type": "module",
+  "main": "src/bot.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/bot.js",
+    "dev": "node --watch src/bot.js"
+  },
+  "dependencies": {}
+}
