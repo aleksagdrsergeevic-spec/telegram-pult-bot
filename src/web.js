@@ -102,8 +102,19 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
   /** кто сейчас выполняет задачу */
   const activeUsers = new Set();
   let modelsCache = { at: 0, list: [] };
-  /** модели, про которые OpenCode сказал «access disabled» */
-  const disabledModels = new Set();
+  /** модели, про которые OpenCode сказал «access disabled»: model -> время */
+  const disabledModels = new Map();
+  const DISABLED_TTL = 15 * 60 * 1000;
+
+  function isDisabledModel(name) {
+    const at = disabledModels.get(name);
+    if (!at) return false;
+    if (Date.now() - at > DISABLED_TTL) {
+      disabledModels.delete(name);
+      return false;
+    }
+    return true;
+  }
   const MAX_QUEUE = 10;
 
   function drainQueue(userId) {
@@ -249,7 +260,7 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
       // Модель выключена в OpenCode Console — один раз пробуем модель по умолчанию.
       if (isModelAccessDisabled(res) && model !== cfg.model) {
         log.warn(`web: модель ${model} недоступна — повторяю на ${cfg.model}`);
-        disabledModels.add(model);
+        disabledModels.set(model, Date.now());
         store.setModel(session.name, null);
         if (idleTimer) clearInterval(idleTimer);
         idleTimer = null;
@@ -353,7 +364,10 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
           .filter((line) => /^[\w.-]+\/[\w.\-/]+$/.test(line));
         modelsCache = { at: Date.now(), list };
       }
-      sendJson(res, 200, { list: modelsCache.list.filter((m) => !disabledModels.has(m)), current: (store.getCurrent() || {}).model || cfg.model });
+      sendJson(res, 200, {
+        list: modelsCache.list.filter((m) => !isDisabledModel(m)),
+        current: (store.getCurrent() || {}).model || cfg.model,
+      });
       return;
     }
 
