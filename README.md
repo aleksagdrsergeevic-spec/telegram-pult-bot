@@ -29,28 +29,75 @@
 
 Всё делает один идемпотентный скрипт: ставит Node 20+ (если нет), ставит `opencode` (если нет), создаёт пользователя `pult`, раскладывает файлы, создаёт `.env`, регистрирует и запускает systemd-сервис.
 
-### Быстрый старт с телефона (SSH-приложение)
+### Пошагова́я установка с телефона (SSH-приложение)
 
-Репозиторий приватный, поэтому серверу нужен доступ к нему по SSH-ключу.
+Что происходит: на сервер кладётся код бота и запускается `install.sh`. Он сам поставит Node, OpenCode, создаст пользователя `pult`, пропишет токен, настроит автозапуск. От вас нужны только команды ниже.
 
-1. В SSH-приложении (Termius, Blink) подключитесь к серверу: `ssh root@<ip>`, пароль из панели хостера.
-2. Подготовьте сервер и ключ:
-   `apt-get update && apt-get install -y git curl`
-   `ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519` (если ключа ещё нет)
-   `cat ~/.ssh/id_ed25519.pub` — скопируйте строку целиком.
-3. В Safari откройте GitHub → Settings → SSH and GPG keys → New SSH key, вставьте ключ (Title — например `vps`).
-4. На сервере:
-   `ssh -T git@github.com` — должно ответить приветствием
-   `git clone git@github.com:aleksagdrsergeevic-spec/telegram-pult.git`
-   `cd telegram-pult`
-   `sudo bash install.sh --token=ВАШ_ТОКЕН --allowed=6775420775`
-5. Для бесплатных моделей войдите в OpenCode:
-   `runuser -u pult -- env HOME=/var/lib/telegram-pult opencode auth login`
-   (в консоли появится ссылка и код — откройте ссылку в Safari на телефоне).
-6. Проверка: `systemctl status telegram-pult`, затем в Telegram `/start` → `/new my-project`.
+**1. Подключиться к серверу.** В Termius/Blink новый хост: адрес — IP из панели хостера, пользователь — `root`, пароль — из панели. Должно появиться приглашение вида `root@vps:~#`.
 
-Для входа clone по HTTPS вместо ключа годится personal access token:
-`git clone https://<ТОКЕН>@github.com/aleksagdrsergeevic-spec/telegram-pult.git` (GitHub → Settings → Developer settings → Personal access tokens).
+**2. Подготовить сервер** (одна строка, минута):
+
+```bash
+apt-get update && apt-get install -y git curl
+```
+
+**3. Сделать ключ для GitHub** — репозиторий приватный, серверу нужен доступ:
+
+```bash
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
+cat ~/.ssh/id_ed25519.pub
+```
+
+Скопируйте целиком вторую строку вывода — она начинается с `ssh-ed25519 AAAA...`.
+
+**4. Добавить ключ в GitHub.** В Safari: github.com → аватар → Settings → SSH and GPG keys → New SSH key → Title `vps`, Key — вставьте скопированное → Add SSH key.
+
+**5. Проверить доступ и склонировать проект:**
+
+```bash
+ssh -T git@github.com
+git clone git@github.com:aleksagdrsergeevic-spec/telegram-pult.git
+cd telegram-pult
+```
+
+На `ssh -T` ожидается `Hi aleksagdrsergeevic-spec! You've successfully authenticated...` (на вопрос про fingerprint отвечайте `yes`).
+
+**6. Запустить установку** (2–5 минут, в конце должна быть строка «токен рабочий, бот: @…»):
+
+```bash
+sudo bash install.sh --token=ВАШ_ТОКЕН --allowed=6775420775
+```
+
+**7. Войти в OpenCode** — без этого не будет бесплатных моделей:
+
+```bash
+runuser -u pult -- env HOME=/var/lib/telegram-pult opencode auth login
+```
+
+В списке выберите провайдер **OpenCode**, появится ссылка и код — откройте ссылку в Safari, войдите и вернитесь в SSH. Проверка:
+
+```bash
+runuser -u pult -- env HOME=/var/lib/telegram-pult opencode models | grep big-pickle
+```
+
+Должно вывести `opencode/big-pickle`.
+
+**8. Проверить сервис:**
+
+```bash
+systemctl status telegram-pult
+```
+
+Нужно `active (running)`. Логи: `journalctl -u telegram-pult -n 50 --no-pager`.
+
+**9. Telegram:** боту `/start`, затем `/new my-project` — и пишите задачу обычным текстом.
+
+Если на каком-то шаге ошибка:
+
+- `Permission denied (publickey)` при clone — ключ не добавлен в GitHub или добавлен не тот, что в `~/.ssh/id_ed25519.pub`.
+- `не задан TELEGRAM_BOT_TOKEN` — токен не попал в `/opt/telegram-pult/.env`; впишите и `systemctl restart telegram-pult`.
+- `opencode: command not found` — `npm i -g opencode-ai@latest`, затем `systemctl restart telegram-pult`.
+- В `/model` нет моделей `opencode/*` — не выполнен шаг 7 (`opencode auth login`).
 
 **Способ А. С компьютера или из веб-консоли хостера** (репозиторий уже на машине):
 
