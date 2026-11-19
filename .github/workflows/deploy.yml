@@ -15,16 +15,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Проверить секреты
+        id: check
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -z "$VPS_HOST" ] || [ -z "$VPS_SSH_KEY" ]; then
+            echo "::notice::секреты VPS_HOST и VPS_SSH_KEY не заданы — деплой пропущен"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Подготовить SSH-ключ
+        if: steps.check.outputs.ready == 'true'
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
         run: |
           set -euo pipefail
-          [ -n "$VPS_HOST" ] || { echo "не задан секрет VPS_HOST"; exit 1; }
-          [ -n "$VPS_SSH_KEY" ] || { echo "не задан секрет VPS_SSH_KEY"; exit 1; }
-
           install -d -m 700 ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
@@ -33,6 +44,7 @@ jobs:
           ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
       - name: Развернуть на VPS
+        if: steps.check.outputs.ready == 'true'
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}

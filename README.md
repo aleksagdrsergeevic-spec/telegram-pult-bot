@@ -2,6 +2,8 @@
 
 Бот для Telegram, который живёт на VPS и кодит за вас: пишете задачу с iPhone в Telegram, а OpenCode выполняет её на сервере в нужной папке.
 
+Репозиторий: `github.com/aleksagdrsergeevic-spec/telegram-pult` (приватный).
+
 - Long polling (`getUpdates`, timeout 25) — вебхук не нужен, порты наружу не открываются.
 - Белый список по chat id: чужим бот отвечает отказом.
 - Модель по умолчанию — `opencode/big-pickle` (Big Pickle, бесплатная в OpenCode Zen), меняется переменной `MODEL`.
@@ -27,14 +29,28 @@
 
 Всё делает один идемпотентный скрипт: ставит Node 20+ (если нет), ставит `opencode` (если нет), создаёт пользователя `pult`, раскладывает файлы, создаёт `.env`, регистрирует и запускает systemd-сервис.
 
-### Быстрый старт с телефона (только браузер)
+### Быстрый старт с телефона (SSH-приложение)
 
-1. В панели хостера возьмите IP сервера, root-пароль и откройте веб-консоль (VNC / Console / Web SSH).
-2. В консоли сервера: `apt-get update && apt-get install -y git curl` (для минимальных образов).
-3. Склонируйте проект и запустите установку с токеном и chat id одной строкой:
-   `git clone <адрес-репозитория> telegram-pult && cd telegram-pult && sudo bash install.sh --token=ВАШ_ТОКЕН --allowed=ВАШ_CHAT_ID`
-4. Войдите в OpenCode для бесплатных моделей: `runuser -u pult -- env HOME=/var/lib/telegram-pult opencode auth login` (в консоли появится ссылка — откройте её в Safari на телефоне).
-5. Напишите боту `/start`, затем `/new my-project` — и задачи.
+Репозиторий приватный, поэтому серверу нужен доступ к нему по SSH-ключу.
+
+1. В SSH-приложении (Termius, Blink) подключитесь к серверу: `ssh root@<ip>`, пароль из панели хостера.
+2. Подготовьте сервер и ключ:
+   `apt-get update && apt-get install -y git curl`
+   `ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519` (если ключа ещё нет)
+   `cat ~/.ssh/id_ed25519.pub` — скопируйте строку целиком.
+3. В Safari откройте GitHub → Settings → SSH and GPG keys → New SSH key, вставьте ключ (Title — например `vps`).
+4. На сервере:
+   `ssh -T git@github.com` — должно ответить приветствием
+   `git clone git@github.com:aleksagdrsergeevic-spec/telegram-pult.git`
+   `cd telegram-pult`
+   `sudo bash install.sh --token=ВАШ_ТОКЕН --allowed=6775420775`
+5. Для бесплатных моделей войдите в OpenCode:
+   `runuser -u pult -- env HOME=/var/lib/telegram-pult opencode auth login`
+   (в консоли появится ссылка и код — откройте ссылку в Safari на телефоне).
+6. Проверка: `systemctl status telegram-pult`, затем в Telegram `/start` → `/new my-project`.
+
+Для входа clone по HTTPS вместо ключа годится personal access token:
+`git clone https://<ТОКЕН>@github.com/aleksagdrsergeevic-spec/telegram-pult.git` (GitHub → Settings → Developer settings → Personal access tokens).
 
 **Способ А. С компьютера или из веб-консоли хостера** (репозиторий уже на машине):
 
