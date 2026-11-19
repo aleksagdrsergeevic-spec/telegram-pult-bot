@@ -116,7 +116,7 @@ cd /var/lib/telegram-pult/workspaces/ИМЯ_ПАПКИ && PULT_OC_CWD=$(pwd) tim
 ```ini
 STREAMING=0                              # 1 — показывать шаги агента в Telegram
 MODEL=opencode/big-pickle                # модель по умолчанию
-IDLE_TIMEOUT_MS=300000                   # стоп задаче, если 5 минут нет вывода
+IDLE_TIMEOUT_MS=600000                   # стоп задаче, если 10 минут нет вывода
 TASK_TIMEOUT_MS=1200000                  # жёсткий предел задачи (20 мин)
 HISTORY_LIMIT=200                        # сообщений истории на сессию
 WEB_PUBLIC_URL=https://…sslip.io         # адрес MiniApp (ставит scripts/https-ip.sh)

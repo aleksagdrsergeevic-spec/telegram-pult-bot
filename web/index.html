@@ -244,6 +244,14 @@
         return div;
       }
 
+      function dur(seconds) {
+        const total = Math.max(0, Math.round(seconds));
+        const m = Math.floor(total / 60);
+        const s = total % 60;
+        if (m > 0) return m + ' мин ' + s + ' с';
+        return s + ' с';
+      }
+
       function setBusy(value) {
         busy = value;
         el.send.hidden = value;
@@ -397,7 +405,10 @@
         es.addEventListener('idle', (e) => {
           try {
             const data = JSON.parse(e.data);
-            note('⏳ вывода нет ' + data.seconds + ' с');
+            note(
+              '⏳ модель молчит ' + dur(data.seconds) + ' — задача выполняется' +
+                (data.limit ? ', предел ' + dur(data.limit) : ''),
+            );
           } catch {
             /* ignore */
           }

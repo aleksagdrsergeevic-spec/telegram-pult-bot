@@ -193,9 +193,13 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
 
         idleTimer = setInterval(() => {
           const quiet = Math.round((Date.now() - handle.lastOutputAt) / 1000);
-          if (quiet >= 45 && quiet - idleNoticeSent >= 45) {
+          if (quiet >= 60 && quiet - idleNoticeSent >= 45) {
             idleNoticeSent = quiet;
-            broadcast(userId, { type: 'idle', seconds: quiet });
+            broadcast(userId, {
+              type: 'idle',
+              seconds: quiet,
+              limit: Math.round(cfg.idleTimeoutMs / 1000),
+            });
           }
         }, 15000);
         if (typeof idleTimer.unref === 'function') idleTimer.unref();

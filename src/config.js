@@ -126,8 +126,8 @@ export function loadConfig(envFile = path.resolve(process.cwd(), '.env')) {
       max: 3900,
       name: 'STREAM_WINDOW',
     }),
-    idleTimeoutMs: toInt(pick(fileEnv, 'IDLE_TIMEOUT_MS', '300000'), 300000, {
-      min: 60000,
+    idleTimeoutMs: toInt(pick(fileEnv, 'IDLE_TIMEOUT_MS', '600000'), 600000, {
+      min: 120000,
       max: 60 * 60 * 1000,
       name: 'IDLE_TIMEOUT_MS',
     }),
