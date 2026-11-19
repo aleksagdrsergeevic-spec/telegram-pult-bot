@@ -107,11 +107,20 @@
       .msg {
         position: relative;
         max-width: 92%;
-        padding: 9px 32px 9px 12px;
+        padding: 9px 32px 18px 12px;
         border-radius: 14px;
         white-space: pre-wrap;
         word-break: break-word;
         font-size: 14px;
+      }
+      .time {
+        position: absolute;
+        right: 8px;
+        bottom: 4px;
+        font-size: 10px;
+        color: var(--hint);
+        opacity: 0.85;
+        pointer-events: none;
       }
       .msg .text {
         -webkit-user-select: text;
@@ -501,7 +510,13 @@
         return (value / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'M';
       }
 
-      function answerBubble(text, summary) {
+      function clock(at) {
+        const date = at ? new Date(at) : new Date();
+        if (Number.isNaN(date.getTime())) return '';
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+
+      function answerBubble(text, summary, at) {
         const div = document.createElement('div');
         div.className = 'msg bot';
         const head = document.createElement('div');
@@ -527,12 +542,32 @@
         body.textContent = text;
         body.hidden = true;
 
+        const time = document.createElement('span');
+        time.className = 'time';
+        time.textContent = clock(at);
+
         toggle.onclick = () => {
           body.hidden = !body.hidden;
           toggle.textContent = body.hidden ? 'показать' : 'скрыть';
         };
 
-        div.append(head, body);
+        div.append(head, body, time);
+        el.log.appendChild(div);
+        scrollDown();
+        return div;
+      }
+
+      /** Короткое сообщение агента без тела ответа (ошибка, таймаут и т.п.). */
+      function noticeBubble(text, at, cls) {
+        const div = document.createElement('div');
+        div.className = 'msg bot' + (cls ? ' ' + cls : '');
+        const span = document.createElement('span');
+        span.className = 'text';
+        span.textContent = text;
+        const time = document.createElement('span');
+        time.className = 'time';
+        time.textContent = clock(at);
+        div.append(span, time);
         el.log.appendChild(div);
         scrollDown();
         return div;
@@ -632,7 +667,7 @@
         showHero(messages.length === 0);
         for (const item of messages) {
           if (item.role === 'user') bubble(item.text, 'me');
-          else answerBubble(item.text, 'ответ');
+          else answerBubble(item.text, 'ответ', item.at);
         }
         scrollDown();
       }
@@ -684,11 +719,13 @@
           if (el0) el0.remove();
 
           const tokens = data.tokens ? fmt((data.tokens.prompt || 0) + (data.tokens.output || 0)) : '';
-          if (data.stopped) note('⏹ остановлено · ' + data.elapsed);
-          else if (data.timedOut) note('⏰ таймаут · ' + data.elapsed);
-          else if (!data.ok) note('❌ ' + (data.error || 'ошибка') + ' · ' + data.elapsed, 'err');
-          else if (data.text) answerBubble(data.text, '✅ готово · ' + data.elapsed + (tokens ? ' · ≈' + tokens : ''));
-          else note('✅ готово · ' + data.elapsed);
+          const at = new Date().toISOString();
+          if (data.stopped) noticeBubble('⏹ остановлено · ' + data.elapsed, at);
+          else if (data.timedOut) noticeBubble('⏰ таймаут · ' + data.elapsed, at);
+          else if (!data.ok) noticeBubble('❌ ' + (data.error || 'ошибка') + ' · ' + data.elapsed, at, 'err');
+          else if (data.text)
+            answerBubble(data.text, '✅ готово · ' + data.elapsed + (tokens ? ' · ≈' + tokens : ''), Date.now());
+          else noticeBubble('✅ готово · ' + data.elapsed, Date.now());
 
           if (state) state.task = null;
           setBusy(false);

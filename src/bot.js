@@ -917,6 +917,26 @@ function ensureOpenCodePermissions() {
     }
     if (raw && isPermissiveConfig(raw)) {
       log.info(`права OpenCode: полный доступ уже настроен (${file})`);
+      const agents = path.join(dir, 'AGENTS.md');
+      if (!fs.existsSync(agents)) {
+        try {
+          fs.writeFileSync(
+            agents,
+            [
+              '# Сервер владельца',
+              '',
+              'Ты работаешь на VPS владельца Telegram-пульта.',
+              '- У тебя есть `sudo` без пароля: `sudo <команда>` работает.',
+              '- Используй sudo только когда операция действительно требует root.',
+              '- Не удаляй системные каталоги, не трогай `/etc`, `/boot`, SSH-ключи без прямой просьбы.',
+              '',
+            ].join('\n'),
+            { mode: 0o600 },
+          );
+        } catch (err) {
+          log.warn(`не смог записать AGENTS.md: ${err.message}`);
+        }
+      }
       return;
     }
     if (raw) {
@@ -939,17 +959,32 @@ function ensureOpenCodePermissions() {
             { action: '*', resource: '*', effect: 'allow' },
             { action: 'read', resource: '*.env*', effect: 'allow' },
           ],
+          instructions: ['~/.config/opencode/AGENTS.md'],
         }
       : {
           $schema: 'https://opencode.ai/config.json',
           // v1: одна строка включает allow вообще для всех действий,
           // включая external_directory и doom_loop.
           permission: 'allow',
+          instructions: ['~/.config/opencode/AGENTS.md'],
         };
 
   try {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     fs.writeFileSync(file, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
+    fs.writeFileSync(
+      path.join(dir, 'AGENTS.md'),
+      [
+        '# Сервер владельца',
+        '',
+        'Ты работаешь на VPS владельца Telegram-пульта.',
+        '- У тебя есть `sudo` без пароля: `sudo <команда>` работает.',
+        '- Используй sudo только когда операция действительно требует root.',
+        '- Не удаляй системные каталоги, не трогай `/etc`, `/boot`, SSH-ключи без прямой просьбы.',
+        '',
+      ].join('\n'),
+      { mode: 0o600 },
+    );
     log.info(`создан конфиг OpenCode с полным доступом: ${file} (v${major >= 2 ? 2 : 1})`);
   } catch (err) {
     log.warn(`не смог создать конфиг прав OpenCode: ${err.message}`);

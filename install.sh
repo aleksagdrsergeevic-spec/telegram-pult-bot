@@ -153,6 +153,27 @@ ensure_dirs() {
   chmod 750 "$DATA_DIR" "$DATA_DIR/workspaces"
 }
 
+ensure_sudo() {
+  # Полный доступ к root для агента: pult может sudo без пароля.
+  # Откат: rm /etc/sudoers.d/telegram-pult
+  local file=/etc/sudoers.d/telegram-pult
+  if [ -f "$file" ] && grep -q "NOPASSWD: ALL" "$file"; then
+    log "sudo без пароля для $PULT_USER уже настроен"
+    return
+  fi
+  cat > "$file" <<EOF
+# Создано telegram-pult: агент может выполнять любые команды от root
+$PULT_USER ALL=(ALL) NOPASSWD: ALL
+Defaults:$PULT_USER !requiretty
+EOF
+  chmod 440 "$file"
+  if command -v visudo >/dev/null 2>&1 && ! visudo -cf "$file" >/dev/null 2>&1; then
+    rm -f "$file"
+    die "sudoers-файл не прошёл проверку, оставил как было"
+  fi
+  log "выдан sudo без пароля для $PULT_USER (полный доступ к root)"
+}
+
 install_opencode_config() {
   # Полный доступ без запросов подтверждений. Формат зависит от версии CLI:
   # v2 — массив permissions, v1 — объект permission.
@@ -166,6 +187,17 @@ install_opencode_config() {
     log "конфиг OpenCode уже есть — сохранил копию в ${file}.bak"
   fi
 
+  cat > "$dir/AGENTS.md" <<'MD'
+# Сервер владельца
+
+Ты работаешь на VPS владельца Telegram-пульта. Всё в этом каталоге — рабочая папка задачи.
+
+- У тебя есть `sudo` без пароля: `sudo <команда>` работает.
+- Используй sudo, когда операция требует root (службы, пакеты, файлы вне рабочей папки).
+- Не удаляй и не перезаписывай системные каталоги, не трогай `/etc`, `/boot`, SSH-ключи и базы данных без прямой просьбы.
+- Всё, что можешь сделать без root, делай без root.
+MD
+
   version="$(opencode --version 2>/dev/null | head -n1)"
   major="${version%%.*}"
   if printf '%s' "$major" | grep -Eq '^[0-9]+$' && [ "$major" -ge 2 ]; then
@@ -175,7 +207,8 @@ install_opencode_config() {
   "permissions": [
     { "action": "*", "resource": "*", "effect": "allow" },
     { "action": "read", "resource": "*.env*", "effect": "allow" }
-  ]
+  ],
+  "instructions": ["~/.config/opencode/AGENTS.md"]
 }
 JSON
     log "права OpenCode: полный доступ без подтверждений (v2 permissions)"
@@ -183,7 +216,8 @@ JSON
     cat > "$file" <<'JSON'
 {
   "$schema": "https://opencode.ai/config.json",
-  "permission": "allow"
+  "permission": "allow",
+  "instructions": ["~/.config/opencode/AGENTS.md"]
 }
 JSON
     log "права OpenCode: полный доступ без подтверждений (v1 permission: allow)"
@@ -437,6 +471,7 @@ ensure_git
 ensure_opencode
 ensure_user
 ensure_dirs
+ensure_sudo
 install_opencode_config
 copy_sources
 setup_env
