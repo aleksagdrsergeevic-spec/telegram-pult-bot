@@ -105,13 +105,31 @@
         gap: 8px;
       }
       .msg {
+        position: relative;
         max-width: 92%;
-        padding: 9px 12px;
+        padding: 9px 32px 9px 12px;
         border-radius: 14px;
         white-space: pre-wrap;
         word-break: break-word;
         font-size: 14px;
       }
+      .msg .text {
+        -webkit-user-select: text;
+        user-select: text;
+        -webkit-touch-callout: default;
+      }
+      .copy {
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        background: transparent;
+        border: 0;
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 13px;
+        padding: 3px 6px;
+        line-height: 1;
+      }
+      .copy:active { color: #fff; }
       .msg.queued { opacity: 0.55; }
       .me {
         align-self: flex-end;
@@ -146,40 +164,13 @@
       footer {
         flex: 0 0 auto;
         display: flex;
-        flex-direction: column;
-        gap: 6px;
+        gap: 8px;
+        align-items: flex-end;
         padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
         border-top: 1px solid var(--line);
         background: rgba(16, 12, 28, 0.78);
         backdrop-filter: blur(14px);
         -webkit-backdrop-filter: blur(14px);
-      }
-      .row { display: flex; gap: 8px; align-items: flex-end; }
-      .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-      .chips[hidden] { display: none; }
-      .chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background: rgba(139, 92, 246, 0.18);
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 3px 9px;
-        font-size: 12px;
-        max-width: 60vw;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .chip button { background: none; border: 0; color: var(--hint); font-size: 12px; padding: 0; }
-      .attach {
-        width: 44px;
-        height: 44px;
-        border-radius: 12px;
-        border: 1px solid var(--line);
-        background: rgba(139, 92, 246, 0.14);
-        color: var(--text);
-        font-size: 17px;
-        flex: 0 0 auto;
       }
       textarea {
         flex: 1 1 auto;
@@ -306,14 +297,9 @@
     </main>
 
     <footer>
-      <div class="chips" id="chips" hidden></div>
-      <div class="row">
-        <button class="attach" id="attachBtn" title="Прикрепить фото">📎</button>
-        <textarea id="input" rows="1" placeholder="Задача для OpenCode…"></textarea>
-        <button class="send" id="sendBtn" title="Отправить">➤</button>
-        <button class="stop" id="stopBtn" title="Остановить задачу и очистить очередь" hidden>■</button>
-      </div>
-      <input type="file" id="fileInput" accept="image/*" multiple hidden />
+      <textarea id="input" rows="1" placeholder="Задача для OpenCode…"></textarea>
+      <button class="send" id="sendBtn" title="Отправить">➤</button>
+      <button class="stop" id="stopBtn" title="Остановить задачу и очистить очередь" hidden>■</button>
     </footer>
 
     <div class="sheet" id="sessionSheet" hidden>
@@ -361,9 +347,6 @@
         modelsList: document.getElementById('modelsList'),
         newName: document.getElementById('newName'),
         createBtn: document.getElementById('createBtn'),
-        chips: document.getElementById('chips'),
-        attachBtn: document.getElementById('attachBtn'),
-        fileInput: document.getElementById('fileInput'),
       };
 
       let token = null;
@@ -372,46 +355,6 @@
       let current = null;
       let busy = false;
       let skew = 0;
-      let attached = [];
-
-      function renderChips() {
-        el.chips.textContent = '';
-        el.chips.hidden = attached.length === 0;
-        attached.forEach((file, index) => {
-          const chip = document.createElement('span');
-          chip.className = 'chip';
-          chip.textContent = (file.name || 'фото').slice(0, 40);
-          const remove = document.createElement('button');
-          remove.type = 'button';
-          remove.textContent = '✕';
-          remove.onclick = () => {
-            attached.splice(index, 1);
-            renderChips();
-          };
-          chip.appendChild(remove);
-          el.chips.appendChild(chip);
-        });
-      }
-
-      el.attachBtn.onclick = () => el.fileInput.click();
-      el.fileInput.onchange = async () => {
-        const picked = Array.from(el.fileInput.files || []).slice(0, 4 - attached.length);
-        el.fileInput.value = '';
-        for (const file of picked) {
-          if (file.size > 8 * 1024 * 1024) {
-            note('файл больше 8 МБ: ' + (file.name || 'фото'), 'err');
-            continue;
-          }
-          const data = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(file);
-          });
-          if (data) attached.push({ name: file.name || 'фото', data });
-        }
-        renderChips();
-      };
 
       function now() {
         return Date.now() - skew;
@@ -450,10 +393,42 @@
         return div;
       }
 
+      async function copyText(text) {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            const area = document.createElement('textarea');
+            area.value = text;
+            area.style.position = 'fixed';
+            area.style.opacity = '0';
+            document.body.appendChild(area);
+            area.select();
+            document.execCommand('copy');
+            area.remove();
+          }
+          note('скопировано');
+        } catch {
+          note('не получилось скопировать — выделите текст вручную', 'err');
+        }
+      }
+
       function bubble(text, cls) {
         const div = document.createElement('div');
         div.className = 'msg ' + (cls || 'bot');
-        div.textContent = text;
+        const span = document.createElement('span');
+        span.className = 'text';
+        span.textContent = text;
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'copy';
+        copy.textContent = '⧉';
+        copy.title = 'Скопировать сообщение';
+        copy.onclick = (event) => {
+          event.stopPropagation();
+          void copyText(span.textContent);
+        };
+        div.append(span, copy);
         el.log.appendChild(div);
         scrollDown();
         return div;
@@ -600,7 +575,8 @@
         es.addEventListener('chunk', (e) => {
           const data = JSON.parse(e.data);
           if (!current) current = bubble('', 'bot');
-          current.textContent += data.text;
+          const textEl = current.querySelector('.text');
+          if (textEl) textEl.textContent += data.text;
           if (state && state.task) state.task.lastOutputAt = now();
           scrollDown();
         });
@@ -660,31 +636,24 @@
 
       function send() {
         const text = el.input.value.trim();
-        if (!text && !attached.length) return;
-        const files = attached.slice();
+        if (!text) return;
         el.input.value = '';
         el.input.style.height = 'auto';
-        attached = [];
-        renderChips();
-        const mine = bubble(files.length ? `📎 ${files.length} · ${text || 'фото'}` : text, 'me');
+        const mine = bubble(text, 'me');
         showHero(false);
         if (busy) mine.classList.add('queued');
         void fetch('/api/prompt', {
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
-          body: JSON.stringify({ text, files }),
+          body: JSON.stringify({ text }),
         })
           .then(async (res) => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-              // вернуть вложения, чтобы не потерялись
-              attached = files.concat(attached);
-              renderChips();
               note(data.error || 'ошибка ' + res.status, 'err');
               return;
             }
             if (data.queued) note('в очереди: ' + data.position);
-            if (data.files) note('вложений: ' + data.files);
           })
           .catch(() => note('не смог отправить', 'err'));
         if (!busy) {

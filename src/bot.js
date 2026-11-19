@@ -11,7 +11,6 @@ import { SessionStore } from './sessions.js';
 import { OpenCode, stripAnsi } from './opencode.js';
 import { startWebServer } from './web.js';
 import { HistoryStore } from './history.js';
-import { isImageMime, saveImage, imagePromptPrefix } from './uploads.js';
 
 const MAX_MESSAGE = 4000;
 const MAX_QUEUE = 5;
@@ -116,7 +115,7 @@ async function withWorkspaceLock(key, fn, owner = '') {
 /* Очередь на чат                                                      */
 /* ------------------------------------------------------------------ */
 
-function enqueueTask(chatId, prompt, options = {}) {
+function enqueueTask(chatId, prompt) {
   const key = String(chatId);
   const depth = (queueDepth.get(key) || 0) + 1;
   if (depth > MAX_QUEUE) {
@@ -131,7 +130,7 @@ function enqueueTask(chatId, prompt, options = {}) {
   }
 
   const prev = queues.get(key) || Promise.resolve();
-  const run = prev.then(() => runTask(chatId, prompt, options)).catch((err) => {
+  const run = prev.then(() => runTask(chatId, prompt)).catch((err) => {
     log.error('задача упала', err);
   });
 
@@ -326,7 +325,7 @@ async function deliverFinal(chatId, messageId, text) {
 /* Выполнение задачи                                                   */
 /* ------------------------------------------------------------------ */
 
-async function runTask(chatId, prompt, options = {}) {
+async function runTask(chatId, prompt) {
   const key = String(chatId);
   let session = store.getCurrent();
 
@@ -403,7 +402,7 @@ async function runTask(chatId, prompt, options = {}) {
       prompt,
       sessionId,
       resume,
-      model: (options.images && cfg.imageModel) || session.model || cfg.model,
+      model: session.model || cfg.model,
       timeoutMs: cfg.taskTimeoutMs,
       idleTimeoutMs: cfg.idleTimeoutMs,
       onChunk,
@@ -754,58 +753,18 @@ async function handleMessage(msg) {
     return;
   }
 
-  let text = typeof msg.text === 'string' ? msg.text.trim() : '';
-
-  // Вложение: фото (берём самый большой размер) или файл-картинка.
-  const photo = Array.isArray(msg.photo) && msg.photo.length ? msg.photo[msg.photo.length - 1] : null;
-  const document = msg.document && isImageMime(msg.document.mime_type) ? msg.document : null;
-  const attachment = photo || document;
-
-  if (!text && !attachment) {
-    await tg.sendMessage(chatId, 'Пришлите текст задачи или фото.').catch(() => {});
+  const text = typeof msg.text === 'string' ? msg.text.trim() : '';
+  if (!text) {
+    await tg.sendMessage(chatId, 'Пока понимаю только текст. Пришлите задачу текстом.').catch(() => {});
     return;
   }
 
-  if (text.startsWith('/') && !attachment) {
+  if (text.startsWith('/')) {
     await handleCommand(chatId, text);
     return;
   }
 
-  let prefix = '';
-  if (attachment) {
-    const session = store.getCurrent();
-    if (!session) {
-      await tg.sendMessage(chatId, 'Сначала создайте сессию: /new <имя>').catch(() => {});
-      return;
-    }
-    const caption = typeof msg.caption === 'string' ? msg.caption.trim() : '';
-    try {
-      const info = await tg.getFile(attachment.file_id);
-      const size = info && info.file_size ? Number(info.file_size) : 0;
-      if (size > cfg.uploadMaxBytes) {
-        await tg
-          .sendMessage(chatId, `Файл слишком большой: ${Math.round(size / 1024 / 1024)} МБ (максимум ${Math.round(cfg.uploadMaxBytes / 1024 / 1024)} МБ).`)
-          .catch(() => {});
-        return;
-      }
-      const buffer = await tg.downloadFile(info.file_path);
-      const saved = saveImage({
-        dir: path.join(cfg.uploadsDir, session.name),
-        buffer,
-        mime: attachment.mime_type || 'image/jpeg',
-        nameHint: attachment.file_name || info.file_path,
-      });
-      prefix = imagePromptPrefix([saved]);
-      log.info(`вложение сохранено: ${saved} (${buffer.length} б)`);
-    } catch (err) {
-      log.error('не смог получить вложение', err);
-      await tg.sendMessage(chatId, `Не смог принять файл: ${err.message}`).catch(() => {});
-      return;
-    }
-    text = caption || 'Опиши, что на изображении. Если на нём есть задача — выполни её.';
-  }
-
-  enqueueTask(chatId, prefix + text, { images: Boolean(attachment) });
+  enqueueTask(chatId, text);
 }
 
 function handleUpdate(update) {

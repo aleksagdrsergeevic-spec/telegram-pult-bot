@@ -5,7 +5,6 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { stripAnsi } from './opencode.js';
-import { saveImage } from './uploads.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const INDEX_PATH = path.join(HERE, '..', 'web', 'index.html');
@@ -109,10 +108,10 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
     const list = queues.get(userId);
     if (!list || !list.length) return;
     if (activeUsers.has(userId)) return;
-    const item = list.shift();
+    const text = list.shift();
     if (!list.length) queues.delete(userId);
     activeUsers.add(userId);
-    void runPrompt(userId, item.text, !!item.images).finally(() => {
+    void runPrompt(userId, text).finally(() => {
       activeUsers.delete(userId);
       drainQueue(userId);
     });
@@ -173,7 +172,7 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
     };
   }
 
-  async function runPrompt(userId, text, hasImages = false) {
+  async function runPrompt(userId, text) {
     const key = String(userId);
     const session = store.getCurrent();
 
@@ -194,7 +193,7 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
       return;
     }
 
-    const model = (hasImages && cfg.imageModel) || session.model || cfg.model;
+    const model = session.model || cfg.model;
     const started = Date.now();
     broadcast(userId, { type: 'start', session: session.name, model });
     if (history) history.append(session.name, 'user', text);
@@ -373,14 +372,10 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
     }
 
     if (route === 'POST /api/prompt') {
-      const bodyLimit = cfg.uploadMaxBytes * cfg.uploadMaxFiles * 2 + 512 * 1024;
-      const body = await readBody(req, bodyLimit);
-      let text = String(body.text || '').trim();
-      const rawFiles = Array.isArray(body.files) ? body.files.slice(0, cfg.uploadMaxFiles) : [];
-      // ws — рабочая папка; session — авторизация (userId обязателен для очереди и событий)
-      const ws = store.getCurrent();
+      const body = await readBody(req);
+      const text = String(body.text || '').trim();
 
-      if (!text && !rawFiles.length) {
+      if (!text) {
         sendJson(res, 400, { error: 'пустой запрос' });
         return;
       }
@@ -388,38 +383,11 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
         sendJson(res, 400, { error: `слишком длинный запрос (максимум ${cfg.promptMaxLength})` });
         return;
       }
-      if (!ws) {
+      if (!store.getCurrent()) {
         sendJson(res, 400, { error: 'сначала создайте сессию (папку)' });
         return;
       }
-      log.info(`web: запрос от ${session.userId}: ${text.length} симв., файлов ${rawFiles.length}`);
-
-      const saved = [];
-      for (const item of rawFiles) {
-        const match = /^data:([^;,]+);base64,(.+)$/s.exec(String((item && item.data) || ''));
-        if (!match) continue;
-        const buffer = Buffer.from(match[2], 'base64');
-        if (buffer.length > cfg.uploadMaxBytes) {
-          sendJson(res, 413, { error: `файл больше ${Math.round(cfg.uploadMaxBytes / 1024 / 1024)} МБ` });
-          return;
-        }
-        saved.push(
-          saveImage({
-            dir: path.join(cfg.uploadsDir, ws.name),
-            buffer,
-            mime: match[1],
-            nameHint: item.name,
-          }),
-        );
-      }
-      if (saved.length) {
-        text = `Приложены изображения — открой их через read и учти содержимое:\n${saved.map((p) => `- ${p}`).join('\n')}\n\n${text}`;
-        log.info(`web: сохранено вложений ${saved.length}`);
-      }
-      if (!text) {
-        sendJson(res, 400, { error: 'нет ни текста, ни файлов' });
-        return;
-      }
+      log.info(`web: запрос от ${session.userId}: ${text.length} симв.`);
 
       if (activeUsers.has(session.userId) || activeTasks.has(session.userId)) {
         const list = queues.get(session.userId) || [];
@@ -427,16 +395,16 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
           sendJson(res, 429, { error: `очередь переполнена (${10})` });
           return;
         }
-        list.push({ text, images: saved.length > 0 });
+        list.push(text);
         queues.set(session.userId, list);
         broadcast(session.userId, { type: 'notice', message: `добавлено в очередь: ${list.length}` });
-        sendJson(res, 202, { queued: true, position: list.length, files: saved.length });
+        sendJson(res, 202, { queued: true, position: list.length });
         return;
       }
 
-      sendJson(res, 202, { accepted: true, files: saved.length });
+      sendJson(res, 202, { accepted: true });
       activeUsers.add(session.userId);
-      void runPrompt(session.userId, text, saved.length > 0).finally(() => {
+      void runPrompt(session.userId, text).finally(() => {
         activeUsers.delete(session.userId);
         drainQueue(session.userId);
       });
