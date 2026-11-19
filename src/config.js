@@ -123,6 +123,7 @@ export function loadConfig(envFile = path.resolve(process.cwd(), '.env')) {
       max: 3900,
       name: 'STREAM_WINDOW',
     }),
+    streaming: pick(fileEnv, 'STREAMING', '0') === '1',
     pollTimeout: toInt(pick(fileEnv, 'POLL_TIMEOUT', '25'), 25, { min: 5, max: 50, name: 'POLL_TIMEOUT' }),
     cloneTimeoutMs: toInt(pick(fileEnv, 'GIT_CLONE_TIMEOUT_MS', '180000'), 180000, {
       min: 10000,

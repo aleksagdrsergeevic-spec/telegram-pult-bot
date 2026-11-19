@@ -204,6 +204,25 @@ function startTyping(chatId) {
 /* Итоговый ответ                                                      */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Убирает из вывода OpenCode служебные строки-«рамки» (маркеры шагов и
+ * box-drawing), оставляя текст ответа и содержимое блоков кода.
+ */
+function cleanAgentOutput(text) {
+  const kept = [];
+  let inFence = false;
+  for (const line of stripAnsi(text).split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      kept.push(line);
+      continue;
+    }
+    if (!inFence && /^\s*[⬡⎿┃│└├╭╮╰╯─]/.test(line)) continue;
+    kept.push(line);
+  }
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function buildFinalText({ res, sessionName, elapsed }) {
   const body = stripAnsi(res.output || '').trim();
 
@@ -293,23 +312,42 @@ async function runTask(chatId, prompt) {
 
   let placeholder = null;
   try {
-    placeholder = await tg.sendMessage(chatId, `⏳ ${session.name}: запускаю OpenCode (${cfg.model})…`, {
+    placeholder = await tg.sendMessage(chatId, `⏳ работаю: ${session.name}…`, {
       disable_notification: true,
     });
   } catch (err) {
     log.warn(`не смог отправить сообщение в ${key}: ${err.message}`);
   }
 
+  const placeholderId = placeholder ? placeholder.message_id : null;
   let outputBuffer = '';
-  const streamer = placeholder
-    ? createStreamer({
-        chatId,
-        messageId: placeholder.message_id,
-        intervalMs: cfg.editIntervalMs,
-        windowSize: cfg.streamWindow,
-        logger: log,
-      })
-    : null;
+
+  // Поток вывода в чат — только если явно включён STREAMING=1.
+  const streamer =
+    placeholderId && cfg.streaming
+      ? createStreamer({
+          chatId,
+          messageId: placeholderId,
+          intervalMs: cfg.editIntervalMs,
+          windowSize: cfg.streamWindow,
+          logger: log,
+        })
+      : null;
+
+  // В тихом режиме раз в минуту обновляем только «работаю · сколько прошло».
+  let heartbeat = null;
+  if (placeholderId && !cfg.streaming) {
+    heartbeat = setInterval(() => {
+      void tg
+        .editText(
+          chatId,
+          placeholderId,
+          `⏳ работаю: ${session.name} · ${formatDuration(Date.now() - started)}`,
+        )
+        .catch(() => {});
+    }, 60000);
+    if (typeof heartbeat.unref === 'function') heartbeat.unref();
+  }
 
   const onChunk = (text) => {
     outputBuffer += text;
@@ -368,12 +406,14 @@ async function runTask(chatId, prompt) {
   } finally {
     activeTasks.delete(key);
     typing.stop();
+    if (heartbeat) clearInterval(heartbeat);
     if (streamer) streamer.stop();
   }
 
   const elapsed = formatDuration(Date.now() - started);
-  const text = buildFinalText({ res, sessionName: session.name, elapsed });
-  await deliverFinal(chatId, placeholder ? placeholder.message_id : null, text).catch((err) => {
+  const finalRes = cfg.streaming ? res : { ...res, output: cleanAgentOutput(res.output || '') };
+  const text = buildFinalText({ res: finalRes, sessionName: session.name, elapsed });
+  await deliverFinal(chatId, placeholderId, text).catch((err) => {
     log.error('не смог отправить итог', err);
   });
 }
