@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-import { stripAnsi } from './opencode.js';
+import { stripAnsi, isModelAccessDisabled } from './opencode.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const INDEX_PATH = path.join(HERE, '..', 'web', 'index.html');
@@ -102,6 +102,8 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
   /** кто сейчас выполняет задачу */
   const activeUsers = new Set();
   let modelsCache = { at: 0, list: [] };
+  /** модели, про которые OpenCode сказал «access disabled» */
+  const disabledModels = new Set();
   const MAX_QUEUE = 10;
 
   function drainQueue(userId) {
@@ -201,14 +203,14 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
     let idleTimer = null;
     let idleNoticeSent = 0;
 
-    try {
-      const res = await withWorkspaceLock(session.name, async () => {
+    const startRun = (runModel) =>
+      withWorkspaceLock(session.name, async () => {
         const handle = oc.start({
           cwd: session.path,
           prompt: text,
           sessionId: session.openCodeSessionId,
           resume: session.hasRun,
-          model,
+          model: runModel,
           timeoutMs: cfg.taskTimeoutMs,
           idleTimeoutMs: cfg.idleTimeoutMs,
           onChunk: (chunk) => {
@@ -241,6 +243,23 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
         return handle.promise;
       });
 
+    try {
+      let res = await startRun(model);
+
+      // Модель выключена в OpenCode Console — один раз пробуем модель по умолчанию.
+      if (isModelAccessDisabled(res) && model !== cfg.model) {
+        log.warn(`web: модель ${model} недоступна — повторяю на ${cfg.model}`);
+        disabledModels.add(model);
+        store.setModel(session.name, null);
+        if (idleTimer) clearInterval(idleTimer);
+        idleTimer = null;
+        broadcast(userId, {
+          type: 'notice',
+          message: `модель ${model} недоступна — переключаюсь на ${cfg.model}`,
+        });
+        res = await startRun(cfg.model);
+      }
+
       if (res.sessionId) store.setOpenCodeSession(session.name, res.sessionId);
       if (!res.missing) store.markRun(session.name);
       if (history) {
@@ -255,7 +274,11 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
         stopped: !!res.stopped,
         timedOut: !!res.timedOut,
         code: res.code,
-        error: res.missing ? 'OpenCode не найден на сервере' : stripAnsi(res.stderr || '').slice(-800),
+        error: res.missing
+          ? 'OpenCode не найден на сервере'
+          : isModelAccessDisabled(res)
+            ? 'модель недоступна (доступ выключен в OpenCode Console)'
+            : stripAnsi(res.stderr || '').slice(-800),
       });
       log.info(`web: задача для ${key} завершена (код ${res.code})`);
     } catch (err) {
@@ -330,7 +353,7 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
           .filter((line) => /^[\w.-]+\/[\w.\-/]+$/.test(line));
         modelsCache = { at: Date.now(), list };
       }
-      sendJson(res, 200, { list: modelsCache.list, current: (store.getCurrent() || {}).model || cfg.model });
+      sendJson(res, 200, { list: modelsCache.list.filter((m) => !disabledModels.has(m)), current: (store.getCurrent() || {}).model || cfg.model });
       return;
     }
 

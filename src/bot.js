@@ -8,7 +8,7 @@ import { loadConfig, ConfigError } from './config.js';
 import { createLogger } from './logger.js';
 import { Telegram, TelegramError } from './telegram.js';
 import { SessionStore } from './sessions.js';
-import { OpenCode, stripAnsi } from './opencode.js';
+import { OpenCode, stripAnsi, isModelAccessDisabled } from './opencode.js';
 import { startWebServer } from './web.js';
 import { HistoryStore } from './history.js';
 
@@ -255,6 +255,14 @@ function cleanAgentOutput(text) {
 function buildFinalText({ res, sessionName, elapsed }) {
   const body = stripAnsi(res.output || '').trim();
 
+  if (/model access is disabled/i.test(`${body}${stripAnsi(res.stderr || '')}`)) {
+    return [
+      '❌ Модель недоступна: доступ к ней выключен в OpenCode Console.',
+      '',
+      'Включите её на https://opencode.ai/console (раздел Models) или выберите другую модель в шапке MiniApp / командой /model.',
+    ].join('\n');
+  }
+
   if (res.missing) {
     return [
       '❌ OpenCode не найден на сервере.',
@@ -396,13 +404,13 @@ async function runTask(chatId, prompt) {
     if (streamer) streamer.push(text);
   };
 
-  const runOnce = (sessionId, resume) => {
+  const runOnce = (sessionId, resume, modelOverride) => {
     const handle = oc.start({
       cwd: session.path,
       prompt,
       sessionId,
       resume,
-      model: session.model || cfg.model,
+      model: modelOverride || session.model || cfg.model,
       timeoutMs: cfg.taskTimeoutMs,
       idleTimeoutMs: cfg.idleTimeoutMs,
       onChunk,
@@ -412,8 +420,21 @@ async function runTask(chatId, prompt) {
   };
 
   let res;
+  let modelNote = '';
   try {
+    const usedModel = session.model || cfg.model;
     res = await withWorkspaceLock(session.name, () => runOnce(session.openCodeSessionId, session.hasRun), key);
+
+    // Модель выключена в OpenCode Console — один раз повторяем на модели по умолчанию.
+    if (isModelAccessDisabled(res) && usedModel !== cfg.model) {
+      log.warn(`модель ${usedModel} недоступна (access disabled) — повторяю на ${cfg.model}`);
+      modelNote = `⚠️ Модель ${usedModel} недоступна (доступ выключен в OpenCode Console). Переключился на ${cfg.model}.\n\n`;
+      store.setModel(session.name, null);
+      outputBuffer = '';
+      if (streamer) streamer.reset();
+      session = store.get(session.name) || session;
+      res = await withWorkspaceLock(session.name, () => runOnce(null, false, cfg.model), key);
+    }
 
     if (
       res &&
@@ -464,7 +485,7 @@ async function runTask(chatId, prompt) {
       `${res.stopped ? ', остановлено' : ''}${res.timedOut ? ', таймаут' : ''}${res.idle ? ', тишина' : ''}`,
   );
   if (res.stderr && res.code !== 0) log.warn(`stderr opencode: ${stripAnsi(res.stderr).slice(-500)}`);
-  const text = buildFinalText({ res: finalRes, sessionName: session.name, elapsed });
+  const text = modelNote + buildFinalText({ res: finalRes, sessionName: session.name, elapsed });
   history.append(session.name, 'assistant', stripAnsi(finalRes.output || text || '').trim() || text);
   await deliverFinal(chatId, placeholderId, text).catch((err) => {
     log.error('не смог отправить итог', err);

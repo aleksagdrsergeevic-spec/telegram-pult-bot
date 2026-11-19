@@ -6,6 +6,12 @@ export function stripAnsi(text) {
   return String(text ?? '').replace(ANSI_RE, '').replace(/\r/g, '');
 }
 
+/** OpenCode сообщает так, когда модель не включена в OpenCode Console. */
+export function isModelAccessDisabled(res) {
+  const text = `${(res && res.output) || ''}${(res && res.stderr) || ''}`;
+  return /model access is disabled/i.test(text);
+}
+
 /**
  * Обёртка над CLI OpenCode.
  * Промпт всегда передаётся отдельным аргументом (без shell), cwd — папка сессии.
