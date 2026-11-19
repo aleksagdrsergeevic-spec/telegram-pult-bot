@@ -131,8 +131,10 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
 
   function stateFor(userId) {
     const current = store.getCurrent();
+    const task = activeTasks.get(String(userId));
     return {
       bot: botUsername,
+      now: Date.now(),
       model: (current && current.model) || cfg.model,
       current: current
         ? { name: current.name, path: current.path, model: current.model || cfg.model, missing: !!current.missing }
@@ -144,7 +146,10 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
         lastUsedAt: item.lastUsedAt,
         hasRun: !!item.hasRun,
       })),
-      running: activeTasks.has(String(userId)),
+      running: !!task,
+      task: task
+        ? { name: task.name, startedAt: task.startedAt, lastOutputAt: task.lastOutputAt || task.startedAt }
+        : null,
     };
   }
 
@@ -187,9 +192,19 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
           model,
           timeoutMs: cfg.taskTimeoutMs,
           idleTimeoutMs: cfg.idleTimeoutMs,
-          onChunk: (chunk) => broadcast(userId, { type: 'chunk', text: chunk }),
+          onChunk: (chunk) => {
+            const running = activeTasks.get(key);
+            if (running) running.lastOutputAt = Date.now();
+            broadcast(userId, { type: 'chunk', text: chunk });
+          },
         });
-        activeTasks.set(key, { name: session.name, startedAt: started, kill: handle.kill, prompt: text });
+        activeTasks.set(key, {
+          name: session.name,
+          startedAt: started,
+          lastOutputAt: Date.now(),
+          kill: handle.kill,
+          prompt: text,
+        });
 
         idleTimer = setInterval(() => {
           const quiet = Math.round((Date.now() - handle.lastOutputAt) / 1000);

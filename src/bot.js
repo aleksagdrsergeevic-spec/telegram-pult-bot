@@ -391,6 +391,8 @@ async function runTask(chatId, prompt) {
 
   const onChunk = (text) => {
     outputBuffer += text;
+    const running = activeTasks.get(key);
+    if (running) running.lastOutputAt = Date.now();
     if (streamer) streamer.push(text);
   };
 
@@ -405,7 +407,7 @@ async function runTask(chatId, prompt) {
       idleTimeoutMs: cfg.idleTimeoutMs,
       onChunk,
     });
-    activeTasks.set(key, { name: session.name, startedAt: started, kill: handle.kill, prompt });
+    activeTasks.set(key, { name: session.name, startedAt: started, lastOutputAt: Date.now(), kill: handle.kill, prompt });
     return handle.promise;
   };
 
@@ -629,7 +631,9 @@ async function handleStatus(chatId) {
     `🤖 Модель: ${(current && current.model) || cfg.model}`,
     `⚙️ OpenCode: ${oc.version || '?'} (session=${oc.caps.session ? 'да' : 'нет'}, continue=${oc.caps.continue ? 'да' : 'нет'})`,
     task
-      ? `⏳ Задача: идёт ${formatDuration(Date.now() - task.startedAt)} (${task.name})`
+      ? `⏳ Задача: идёт ${formatDuration(Date.now() - task.startedAt)} (${task.name}), тишина ${formatDuration(
+          Date.now() - (task.lastOutputAt || task.startedAt),
+        )}`
       : '⏳ Задача: нет',
     waiting ? `⌛ В очереди: ${waiting}` : '',
     `🕒 Аптайм: ${formatDuration(Date.now() - startedAt)}`,

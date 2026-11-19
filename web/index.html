@@ -221,6 +221,25 @@
       let es = null;
       let current = null;
       let busy = false;
+      let skew = 0;
+
+      function now() {
+        return Date.now() - skew;
+      }
+
+      function tick() {
+        if (!state || !state.task) {
+          el.status.textContent = '';
+          el.status.classList.remove('busy');
+          return;
+        }
+        const elapsed = Math.round((now() - state.task.startedAt) / 1000);
+        const quiet = Math.round((now() - (state.task.lastOutputAt || state.task.startedAt)) / 1000);
+        el.status.textContent =
+          (quiet >= 30 ? 'молчит ' + dur(quiet) : 'работает') + ' · ' + dur(elapsed);
+        el.status.classList.add('busy');
+      }
+      setInterval(tick, 1000);
 
       function scrollDown() {
         el.log.scrollTop = el.log.scrollHeight;
@@ -256,12 +275,16 @@
         busy = value;
         el.send.hidden = value;
         el.stop.hidden = !value;
-        el.status.textContent = value ? 'работаю…' : '';
-        el.status.classList.toggle('busy', value);
+        if (!value) {
+          el.status.textContent = '';
+          el.status.classList.remove('busy');
+        }
+        tick();
       }
 
       function renderState(next) {
         state = next;
+        skew = next.now ? Date.now() - next.now : 0;
         el.sessionName.textContent = next.current ? next.current.name : 'нет сессии';
         el.modelName.textContent = (next.current && next.current.model) || next.model || '—';
         setBusy(!!next.running);
@@ -363,12 +386,15 @@
           current = bubble('', 'bot');
           current.classList.add('cursor');
           note('▶ ' + data.session + ' · ' + data.model);
+          if (!state) state = {};
+          state.task = { startedAt: now(), lastOutputAt: now() };
           setBusy(true);
         });
         es.addEventListener('chunk', (e) => {
           const data = JSON.parse(e.data);
           if (!current) current = bubble('', 'bot');
           current.textContent += data.text;
+          if (state && state.task) state.task.lastOutputAt = now();
           scrollDown();
         });
 
@@ -380,6 +406,7 @@
           else if (!data.ok) note('❌ код ' + data.code + (data.error ? ': ' + data.error : ''), 'err');
           else note('✅ готово · ' + data.elapsed);
           current = null;
+          if (state) state.task = null;
           setBusy(false);
           refresh();
         });
