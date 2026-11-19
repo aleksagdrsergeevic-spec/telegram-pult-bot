@@ -677,6 +677,9 @@
           .then(async (res) => {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
+              // вернуть вложения, чтобы не потерялись
+              attached = files.concat(attached);
+              renderChips();
               note(data.error || 'ошибка ' + res.status, 'err');
               return;
             }

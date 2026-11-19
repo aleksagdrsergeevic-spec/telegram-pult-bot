@@ -377,7 +377,8 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
       const body = await readBody(req, bodyLimit);
       let text = String(body.text || '').trim();
       const rawFiles = Array.isArray(body.files) ? body.files.slice(0, cfg.uploadMaxFiles) : [];
-      const session = store.getCurrent();
+      // ws — рабочая папка; session — авторизация (userId обязателен для очереди и событий)
+      const ws = store.getCurrent();
 
       if (!text && !rawFiles.length) {
         sendJson(res, 400, { error: 'пустой запрос' });
@@ -387,6 +388,11 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
         sendJson(res, 400, { error: `слишком длинный запрос (максимум ${cfg.promptMaxLength})` });
         return;
       }
+      if (!ws) {
+        sendJson(res, 400, { error: 'сначала создайте сессию (папку)' });
+        return;
+      }
+      log.info(`web: запрос от ${session.userId}: ${text.length} симв., файлов ${rawFiles.length}`);
 
       const saved = [];
       for (const item of rawFiles) {
@@ -397,13 +403,9 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
           sendJson(res, 413, { error: `файл больше ${Math.round(cfg.uploadMaxBytes / 1024 / 1024)} МБ` });
           return;
         }
-        if (!session) {
-          sendJson(res, 400, { error: 'сначала создайте сессию' });
-          return;
-        }
         saved.push(
           saveImage({
-            dir: path.join(cfg.uploadsDir, session.name),
+            dir: path.join(cfg.uploadsDir, ws.name),
             buffer,
             mime: match[1],
             nameHint: item.name,
