@@ -65,7 +65,7 @@ cd telegram-pult
 **6. Запустить установку** (2–5 минут, в конце должна быть строка «токен рабочий, бот: @…»):
 
 ```bash
-sudo bash install.sh --token=ВАШ_ТОКЕН --allowed=6775420775
+sudo bash install.sh --token=ВАШ_ТОКЕН --allowed=ВАШ_CHAT_ID
 ```
 
 **7. Войти в OpenCode** — без этого не будет бесплатных моделей:
