@@ -368,6 +368,23 @@
           }
         });
 
+        es.addEventListener('notice', (e) => {
+          try {
+            note(JSON.parse(e.data).message);
+          } catch {
+            /* ignore */
+          }
+        });
+
+        es.addEventListener('idle', (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            note('⏳ вывода нет ' + data.seconds + ' с');
+          } catch {
+            /* ignore */
+          }
+        });
+
         es.onerror = () => {
           /* браузер сам переподключится */
         };
@@ -395,7 +412,13 @@
 
       el.send.onclick = send;
       el.stop.onclick = async () => {
-        await api('/api/stop', {});
+        el.stop.disabled = true;
+        const data = await api('/api/stop', {});
+        if (data && data.stopped) note('⏹ останавливаю…');
+        else note('нечего останавливать');
+        setTimeout(() => {
+          el.stop.disabled = false;
+        }, 3000);
       };
 
       el.input.addEventListener('input', () => {

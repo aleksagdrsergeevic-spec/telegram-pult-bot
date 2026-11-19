@@ -21,7 +21,7 @@ export class OpenCode {
       FORCE_COLOR: '0',
       TERM: 'dumb',
     };
-    this.caps = { model: true, session: false, continue: true, auto: false };
+    this.caps = { model: true, session: false, continue: true, auto: false, standalone: false };
     this.version = null;
     this.helpText = null;
   }
@@ -94,6 +94,9 @@ export class OpenCode {
         // --auto одобряет все запросы разрешений, которые не запрещены явно
         auto: /--auto\b/.test(this.helpText),
       };
+      // --standalone: у задачи свой сервер OpenCode, поэтому kill реально
+      // останавливает генерацию, а не только отсоединяет клиент.
+      caps.standalone = /--standalone\b/.test(this.helpText);
       // Если справка распозналась — доверяем ей; иначе оставляем разумный дефолт.
       if (caps.model || caps.session || caps.continue) {
         this.caps = caps;
@@ -123,6 +126,7 @@ export class OpenCode {
     const args = ['run'];
     if (this.caps.model) args.push('--model', model || this.model);
     if (this.caps.auto) args.push('--auto');
+    if (this.caps.standalone) args.push('--standalone');
 
     if (this.caps.session && sessionId) {
       args.push('--session', sessionId);
@@ -170,11 +174,37 @@ export class OpenCode {
     let output = '';
     let stderr = '';
     let killedBy = null;
-    let finished = false;
+    let settled = false;
+    let lastOutputAt = Date.now();
+    let timeoutTimer = null;
+    let hardKillTimer = null;
+    let forceDeadline = null;
+    let resolveFn = null;
+
+    const promise = new Promise((resolve) => {
+      resolveFn = resolve;
+    });
+
+    const finalize = (payload) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutTimer);
+      clearTimeout(hardKillTimer);
+      clearTimeout(forceDeadline);
+      const match = /ses_[A-Za-z0-9]{8,}/.exec(output);
+      resolveFn({
+        sessionId: match ? match[0] : null,
+        output,
+        stderr,
+        missing: false,
+        ...payload,
+      });
+    };
 
     const collect = (chunk, isError) => {
       const text = stripAnsi(chunk.toString());
       if (!text) return;
+      lastOutputAt = Date.now();
       output = `${output}${text}`;
       if (output.length > 400000) output = output.slice(-400000);
       if (isError) stderr = `${stderr}${text}`.slice(-20000);
@@ -203,51 +233,53 @@ export class OpenCode {
     };
 
     const kill = (reason = 'stop') => {
-      if (finished || killedBy) return;
+      if (settled || killedBy) return;
       killedBy = reason;
       killTree('SIGTERM');
-      const hard = setTimeout(() => killTree('SIGKILL'), 5000);
-      if (typeof hard.unref === 'function') hard.unref();
-    };
-
-    const timer = setTimeout(() => kill('timeout'), timeoutMs);
-    if (typeof timer.unref === 'function') timer.unref();
-
-    const promise = new Promise((resolve) => {
-      child.on('error', (err) => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(timer);
-        const missing = err.code === 'ENOENT';
-        resolve({
+      hardKillTimer = setTimeout(() => killTree('SIGKILL'), 5000);
+      if (typeof hardKillTimer.unref === 'function') hardKillTimer.unref();
+      // Если процесс не закрылся, всё равно освобождаем задачу: иначе блокировка
+      // рабочей папки останется занятой и следующие задачи будут «молчать».
+      forceDeadline = setTimeout(() => {
+        finalize({
           code: -1,
-          output,
-          stderr: `${stderr}${err.message}`,
-          timedOut: false,
-          stopped: false,
-          sessionId: null,
-          missing,
-        });
-      });
-
-      child.on('close', (code, signal) => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(timer);
-        const match = /ses_[A-Za-z0-9]{8,}/.exec(output);
-        resolve({
-          code: code ?? -1,
-          signal: signal || null,
-          output,
-          stderr,
           timedOut: killedBy === 'timeout',
           stopped: killedBy === 'stop',
-          sessionId: match ? match[0] : null,
-          missing: false,
+          hang: true,
         });
+      }, 20000);
+      if (typeof forceDeadline.unref === 'function') forceDeadline.unref();
+    };
+
+    timeoutTimer = setTimeout(() => kill('timeout'), timeoutMs);
+    if (typeof timeoutTimer.unref === 'function') timeoutTimer.unref();
+
+    child.on('error', (err) => {
+      finalize({
+        code: -1,
+        stderr: `${stderr}${err.message}`,
+        timedOut: false,
+        stopped: false,
+        missing: err.code === 'ENOENT',
       });
     });
 
-    return { pid: child.pid, kill, promise };
+    child.on('close', (code, signal) => {
+      finalize({
+        code: code ?? -1,
+        signal: signal || null,
+        timedOut: killedBy === 'timeout',
+        stopped: killedBy === 'stop',
+      });
+    });
+
+    return {
+      pid: child.pid,
+      kill,
+      promise,
+      get lastOutputAt() {
+        return lastOutputAt;
+      },
+    };
   }
 }

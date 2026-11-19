@@ -179,6 +179,26 @@ journalctl -u telegram-pult -n 50 --no-pager
 
 Telegram открывает MiniApp только по **https**. Наружу порт бота светить не нужно — поставьте перед ним HTTPS-прокси.
 
+**Вариант без домена — https прямо на IP (sslip.io).** Let's Encrypt не выдаёт сертификаты на голый IP, но есть бесплатный DNS: имя `1-2-3-4.sslip.io` указывает на `1.2.3.4`. Своего IP не покупаете, сертификат настоящий.
+
+```bash
+apt-get install -y caddy
+IP=$(curl -s https://api.ipify.org)
+HOST="$(printf '%s' "$IP" | tr '.' '-').sslip.io"
+printf '%s {\n    reverse_proxy 127.0.0.1:8787\n}\n' "$HOST" > /etc/caddy/Caddyfile
+systemctl restart caddy
+curl -I "https://$HOST/"   # должен ответить 200
+```
+
+Порты 80 и 443 должны быть открыты (`ufw allow 80,443/tcp`, если ufw включён; у хостера — в облачном файрволе). Затем:
+
+```bash
+cd /root/telegram-pult-bot && git pull
+sudo bash install.sh --web-url="https://$HOST"
+```
+
+Адрес постоянный, пока не сменится IP сервера. Сменился — повторите с новым `HOST`.
+
 **Вариант с доменом (Caddy):**
 
 ```bash

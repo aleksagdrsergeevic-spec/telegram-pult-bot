@@ -173,6 +173,9 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
     const started = Date.now();
     broadcast(userId, { type: 'start', session: session.name, model });
 
+    let idleTimer = null;
+    let idleNoticeSent = 0;
+
     try {
       const res = await withWorkspaceLock(session.name, async () => {
         const handle = oc.start({
@@ -185,6 +188,16 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
           onChunk: (chunk) => broadcast(userId, { type: 'chunk', text: chunk }),
         });
         activeTasks.set(key, { name: session.name, startedAt: started, kill: handle.kill, prompt: text });
+
+        idleTimer = setInterval(() => {
+          const quiet = Math.round((Date.now() - handle.lastOutputAt) / 1000);
+          if (quiet >= 45 && quiet - idleNoticeSent >= 45) {
+            idleNoticeSent = quiet;
+            broadcast(userId, { type: 'idle', seconds: quiet });
+          }
+        }, 15000);
+        if (typeof idleTimer.unref === 'function') idleTimer.unref();
+
         return handle.promise;
       });
 
@@ -205,6 +218,7 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
       log.error('web: ошибка задачи', err);
       broadcast(userId, { type: 'error', message: err.message });
     } finally {
+      if (idleTimer) clearInterval(idleTimer);
       activeTasks.delete(key);
     }
   }
@@ -318,7 +332,11 @@ export async function startWebServer({ cfg, log, store, oc, tg, activeTasks, wit
 
     if (route === 'POST /api/stop') {
       const task = activeTasks.get(session.userId);
-      if (task) task.kill('stop');
+      if (task) {
+        task.kill('stop');
+        broadcast(session.userId, { type: 'notice', message: 'останавливаю задачу…' });
+        log.info(`web: стоп для ${session.userId}`);
+      }
       sendJson(res, 200, { stopped: !!task });
       return;
     }
