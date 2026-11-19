@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 import process from 'node:process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import { loadConfig, ConfigError } from './config.js';
 import { createLogger } from './logger.js';
@@ -791,6 +794,43 @@ function shutdown(signal) {
   setTimeout(() => process.exit(0), 1500).unref?.();
 }
 
+/**
+ * Конфиг OpenCode с полным доступом: агент не останавливается на запросах
+ * подтверждений (shell, правки файлов, webfetch). Формат зависит от версии CLI.
+ */
+function ensureOpenCodePermissions() {
+  const dir = path.join(os.homedir(), '.config', 'opencode');
+  const file = path.join(dir, 'opencode.json');
+  if (fs.existsSync(file)) {
+    log.info(`конфиг OpenCode уже есть: ${file}`);
+    return;
+  }
+
+  const match = /(\d+)\.(\d+)/.exec(String(oc.version || ''));
+  const major = match ? Number(match[1]) : 1;
+  const body =
+    major >= 2
+      ? {
+          $schema: 'https://opencode.ai/config.json',
+          permissions: [
+            { action: '*', resource: '*', effect: 'allow' },
+            { action: 'read', resource: '*.env*', effect: 'allow' },
+          ],
+        }
+      : {
+          $schema: 'https://opencode.ai/config.json',
+          permission: { edit: 'allow', bash: 'allow', webfetch: 'allow' },
+        };
+
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(file, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
+    log.info(`создан конфиг OpenCode с полным доступом: ${file} (v${major >= 2 ? 2 : 1})`);
+  } catch (err) {
+    log.warn(`не смог создать конфиг прав OpenCode: ${err.message}`);
+  }
+}
+
 async function main() {
   try {
     cfg = loadConfig();
@@ -818,6 +858,7 @@ async function main() {
 
   oc = new OpenCode({ bin: cfg.opencodeBin, model: cfg.model, logger: log });
   await oc.probe();
+  ensureOpenCodePermissions();
 
   tg = new Telegram(cfg.token, log, { apiBase: cfg.apiBase });
 

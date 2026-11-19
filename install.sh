@@ -148,6 +148,51 @@ ensure_dirs() {
   chmod 750 "$DATA_DIR" "$DATA_DIR/workspaces"
 }
 
+install_opencode_config() {
+  # Полный доступ без запросов подтверждений. Формат зависит от версии CLI:
+  # v2 — массив permissions, v1 — объект permission.
+  local dir="$DATA_DIR/.config/opencode"
+  local file="$dir/opencode.json"
+  local version major
+
+  mkdir -p "$dir"
+  if [ -f "$file" ]; then
+    cp -a "$file" "${file}.bak" 2>/dev/null || true
+    log "конфиг OpenCode уже есть — сохранил копию в ${file}.bak"
+  fi
+
+  version="$(opencode --version 2>/dev/null | head -n1)"
+  major="${version%%.*}"
+  if printf '%s' "$major" | grep -Eq '^[0-9]+$' && [ "$major" -ge 2 ]; then
+    cat > "$file" <<'JSON'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permissions": [
+    { "action": "*", "resource": "*", "effect": "allow" },
+    { "action": "read", "resource": "*.env*", "effect": "allow" }
+  ]
+}
+JSON
+    log "права OpenCode: полный доступ без подтверждений (v2 permissions)"
+  else
+    cat > "$file" <<'JSON'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "edit": "allow",
+    "bash": "allow",
+    "webfetch": "allow"
+  }
+}
+JSON
+    log "права OpenCode: полный доступ без подтверждений (v1 permission)"
+  fi
+
+  chown -R "$PULT_USER:$PULT_USER" "$dir"
+  chmod 700 "$dir"
+  chmod 600 "$file"
+}
+
 # -------------------------------------------------------------- файлы -----
 
 copy_sources() {
@@ -387,6 +432,7 @@ ensure_git
 ensure_opencode
 ensure_user
 ensure_dirs
+install_opencode_config
 copy_sources
 setup_env
 chown -R "$PULT_USER:$PULT_USER" "$APP_DIR"
